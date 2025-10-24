@@ -2,12 +2,69 @@ import 'server-only';
 import { WorkflowNode, WorkflowState } from '../types';
 import { substituteVariables } from '../variable-substitution';
 import { resolveMCPServers, migrateMCPData } from '@/lib/mcp/resolver';
+import { extractRateLimitInfo, getRateLimitMessage } from '../rate-limiter';
+import { optimizePrompt, isPromptTooLong } from '../token-optimizer';
+import { providerRateLimiter } from '../token-bucket';
 
 /**
- * Execute Agent Node - Calls LLM with instructions and tools
+ * Execute Agent Node with Rate Limiting and Retry Logic
  * Server-side only - called from API routes
  */
 export async function executeAgentNode(
+  node: WorkflowNode,
+  state: WorkflowState,
+  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string },
+  maxRetries: number = 3
+): Promise<any> {
+  let lastError: any;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // Wait for rate limit token before making the request
+      const provider = node.data.model?.split('/')[0] || 'anthropic';
+      const hasToken = await providerRateLimiter.waitForToken(provider, 30000);
+      
+      if (!hasToken) {
+        throw new Error('Rate limit token timeout. Please try again later.');
+      }
+      
+      return await executeAgentNodeInternal(node, state, apiKeys);
+    } catch (error) {
+      lastError = error;
+      
+      // Check if it's a rate limit error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+        const rateLimitInfo = extractRateLimitInfo(error);
+        
+        // If this is the last attempt, throw the error
+        if (attempt === maxRetries) {
+          const message = getRateLimitMessage(rateLimitInfo);
+          throw new Error(message);
+        }
+        
+        // Wait before retrying with exponential backoff
+        const retryAfter = rateLimitInfo?.retryAfter || 60;
+        const backoffDelay = Math.min(retryAfter * 1000, 1000 * Math.pow(2, attempt)); // Exponential backoff, max 60s
+        console.log(`Rate limited. Waiting ${Math.ceil(backoffDelay/1000)} seconds before retry ${attempt + 1}/${maxRetries}...`);
+        
+        // Wait for the calculated delay
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        continue;
+      }
+      
+      // For non-rate-limit errors, throw immediately
+      throw error;
+    }
+  }
+  
+  throw lastError;
+}
+
+/**
+ * Internal agent execution function
+ */
+async function executeAgentNodeInternal(
   node: WorkflowNode,
   state: WorkflowState,
   apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string }
@@ -73,15 +130,64 @@ export async function executeAgentNode(
 
     // Use the already-substituted instructions from line 20
     // Don't re-process or append context if variables are already substituted
-    const contextualPrompt = instructions;
+    let contextualPrompt = instructions;
+    
+    // Optimize prompt if it's too long to prevent rate limiting
+    if (isPromptTooLong(contextualPrompt)) {
+      console.log('⚠️ Prompt is very long, optimizing to prevent rate limiting...');
+      contextualPrompt = optimizePrompt(contextualPrompt, 8000); // Limit to 8k tokens
+    }
 
     // Prepare messages
-    const messages = data.includeChatHistory && state.chatHistory.length > 0
+    let messages = data.includeChatHistory && state.chatHistory.length > 0
       ? [
           ...state.chatHistory,
           { role: 'user' as const, content: contextualPrompt },
         ]
       : [{ role: 'user' as const, content: contextualPrompt }];
+
+    // Apply token optimization to the entire message context
+    const fullContext = messages.map(m => m.content).join('\n');
+    const estimatedTokens = Math.ceil(fullContext.length / 4);
+    console.log(`🔍 Token analysis: ${estimatedTokens} estimated tokens, ${fullContext.length} characters`);
+    
+    // Circuit breaker: If content is extremely large, force aggressive optimization
+    if (estimatedTokens > 25000) {
+      console.log('🚨 CIRCUIT BREAKER: Content exceeds 25k tokens, forcing ultra-aggressive optimization');
+      const userMessage = messages[messages.length - 1];
+      if (userMessage && userMessage.content) {
+        // Force ultra-aggressive optimization
+        userMessage.content = optimizePrompt(userMessage.content, 3000); // Limit to 3k tokens
+        console.log(`🚨 Circuit breaker applied: Content reduced to ${userMessage.content.length} characters`);
+      }
+    }
+    
+    if (isPromptTooLong(fullContext, 15000)) { // Use 15k as threshold (leaving 15k buffer for safety)
+      console.log('⚠️ Full message context is very long, optimizing to prevent rate limiting...');
+      console.log(`📊 Before optimization: ${fullContext.length} characters, ~${estimatedTokens} tokens`);
+      
+      // Optimize the user message (which contains the main content)
+      const userMessage = messages[messages.length - 1];
+      if (userMessage && userMessage.content) {
+        const originalLength = userMessage.content.length;
+        userMessage.content = optimizePrompt(userMessage.content, 5000); // Limit user content to 5k tokens
+        console.log(`✂️ Optimized user message: ${originalLength} → ${userMessage.content.length} characters`);
+      }
+      
+      // If chat history is included, truncate it to keep only recent messages
+      if (data.includeChatHistory && state.chatHistory.length > 0) {
+        const recentHistory = state.chatHistory.slice(-3); // Keep only last 3 messages
+        messages = [
+          ...recentHistory,
+          { role: 'user' as const, content: userMessage.content },
+        ];
+        console.log(`📝 Truncated chat history: ${state.chatHistory.length} → ${recentHistory.length} messages`);
+      }
+      
+      const optimizedContext = messages.map(m => m.content).join('\n');
+      const optimizedTokens = Math.ceil(optimizedContext.length / 4);
+      console.log(`✅ After optimization: ${optimizedContext.length} characters, ~${optimizedTokens} tokens`);
+    }
 
     // Parse model string (handle models with slashes like groq/openai/gpt-oss-120b)
     const modelString = data.model || 'anthropic/claude-sonnet-4-5-20250929';
@@ -417,7 +523,9 @@ export async function executeAgentNode(
     }
 
     if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
-      throw new Error('Rate limited. Please wait a moment and try again.');
+      const rateLimitInfo = extractRateLimitInfo(error);
+      const message = getRateLimitMessage(rateLimitInfo);
+      throw new Error(message);
     }
 
     if (errorMessage.includes('No API key available')) {

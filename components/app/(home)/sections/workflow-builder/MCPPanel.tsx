@@ -5,9 +5,8 @@ import { useState, useEffect } from "react";
 import { Globe, Brain, Database, Package, Loader2, ChevronDown } from "lucide-react";
 import type { Node } from "@xyflow/react";
 import { toast } from "sonner";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
+import { useEnabledMCPs } from "@/lib/hooks/useMCPServers";
 
 interface MCPPanelProps {
   node: Node | null;
@@ -30,9 +29,7 @@ export default function MCPPanel({
   const nodeData = node?.data as any;
 
   // Fetch enabled MCP servers from central registry
-  const mcpServers = useQuery(api.mcpServers.getEnabledMCPs,
-    user?.id ? { userId: user.id } : "skip"
-  );
+  const { mcpServers } = useEnabledMCPs();
 
   // Store only the selected server ID
   const [selectedServerId, setSelectedServerId] = useState<string | null>(() => {

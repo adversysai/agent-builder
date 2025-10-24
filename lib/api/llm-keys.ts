@@ -6,17 +6,7 @@
  * 2. Fall back to environment variables if no user key exists
  */
 
-import { ConvexClient } from "convex/browser";
-import { api } from "@/convex/_generated/api";
-
-// Initialize Convex client for server-side use
-const getConvexClient = () => {
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!convexUrl) {
-    throw new Error("NEXT_PUBLIC_CONVEX_URL is not configured");
-  }
-  return new ConvexClient(convexUrl);
-};
+import { db } from "@/lib/database/client";
 
 /**
  * Get the API key for a specific LLM provider
@@ -33,20 +23,13 @@ export async function getLLMApiKey(
   // First, try to get user-specific key if userId is provided
   if (userId) {
     try {
-      const client = getConvexClient();
-      const userKey = await client.query(api.userLLMKeys.getActiveKey, {
-        userId,
-        provider,
-      });
+      const result = await db.query(
+        'SELECT key FROM "userLLMKey" WHERE "userId" = $1 AND provider = $2 AND active = true',
+        [userId, provider]
+      );
 
-      if (userKey?.apiKey) {
-        // Update usage stats
-        await client.mutation(api.userLLMKeys.updateKeyUsage, {
-          userId,
-          provider,
-        }).catch(console.error); // Don't fail if usage update fails
-
-        return userKey.apiKey;
+      if (result.rows.length > 0) {
+        return result.rows[0].key;
       }
     } catch (error) {
       console.error(`Failed to get user key for ${provider}:`, error);
@@ -136,13 +119,12 @@ export async function getProvidersStatus(userId?: string): Promise<{
     // Check user key first
     if (userId) {
       try {
-        const client = getConvexClient();
-        const userKey = await client.query(api.userLLMKeys.getActiveKey, {
-          userId,
-          provider,
-        });
+        const result = await db.query(
+          'SELECT key FROM "userLLMKey" WHERE "userId" = $1 AND provider = $2 AND active = true',
+          [userId, provider]
+        );
 
-        if (userKey) {
+        if (result.rows.length > 0) {
           status[provider] = { configured: true, source: 'user' };
           continue;
         }

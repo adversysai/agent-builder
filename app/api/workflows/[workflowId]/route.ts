@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getConvexClient, getAuthenticatedConvexClient, api, isConvexConfigured } from '@/lib/convex/client';
+import { getWorkflow, deleteWorkflow } from '@/lib/database/workflows';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/workflows/[workflowId] - Get a specific workflow from Convex
+ * GET /api/workflows/[workflowId] - Get a specific workflow from database
  */
 export async function GET(
   request: NextRequest,
@@ -13,30 +13,7 @@ export async function GET(
   try {
     const { workflowId } = await params;
 
-    if (!isConvexConfigured()) {
-      return NextResponse.json(
-        { error: 'Convex not configured' },
-        { status: 500 }
-      );
-    }
-
-    const convex = await getAuthenticatedConvexClient();
-
-    // Look up by customId first, then try as Convex ID
-    let workflow = await convex.query(api.workflows.getWorkflowByCustomId, {
-      customId: workflowId,
-    });
-
-    // If not found and looks like Convex ID, try direct lookup
-    if (!workflow && workflowId.startsWith('j')) {
-      try {
-        workflow = await convex.query(api.workflows.getWorkflow, {
-          id: workflowId as any,
-        });
-      } catch (e) {
-        // Not a valid Convex ID
-      }
-    }
+    const workflow = await getWorkflow(workflowId);
 
     if (!workflow) {
       return NextResponse.json(
@@ -49,9 +26,9 @@ export async function GET(
       success: true,
       workflow: {
         ...workflow,
-        id: workflow.customId || workflow._id, // Return customId if exists
+        id: workflow.customId || workflow.id, // Return customId if exists
       },
-      source: 'convex',
+      source: 'database',
     });
   } catch (error) {
     console.error('Error fetching workflow:', error);
@@ -66,7 +43,7 @@ export async function GET(
 }
 
 /**
- * DELETE /api/workflows/[workflowId] - Delete a workflow from Convex
+ * DELETE /api/workflows/[workflowId] - Delete a workflow from database
  */
 export async function DELETE(
   request: NextRequest,
@@ -75,19 +52,8 @@ export async function DELETE(
   try {
     const { workflowId } = await params;
 
-    if (!isConvexConfigured()) {
-      return NextResponse.json(
-        { error: 'Convex not configured' },
-        { status: 500 }
-      );
-    }
-
-    const convex = await getAuthenticatedConvexClient();
-
-    // Look up by customId to get Convex ID
-    const workflow = await convex.query(api.workflows.getWorkflowByCustomId, {
-      customId: workflowId,
-    });
+    // Get the workflow first to check if it exists
+    const workflow = await getWorkflow(workflowId);
 
     if (!workflow) {
       return NextResponse.json(
@@ -96,14 +62,12 @@ export async function DELETE(
       );
     }
 
-    // Delete using Convex ID
-    await convex.mutation(api.workflows.deleteWorkflow, {
-      id: workflow._id,
-    });
+    // Delete the workflow
+    await deleteWorkflow(workflowId);
 
     return NextResponse.json({
       success: true,
-      source: 'convex',
+      source: 'database',
       message: `Workflow ${workflowId} deleted`,
     });
   } catch (error) {

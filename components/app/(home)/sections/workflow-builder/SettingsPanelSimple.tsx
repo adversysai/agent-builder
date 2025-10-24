@@ -3,12 +3,33 @@
 import { motion, AnimatePresence } from "framer-motion";
 import React, { useState, useEffect } from "react";
 import { CheckCircle, XCircle, AlertCircle, Key, Copy, Trash2, Upload, Plug, Plus, ChevronDown, ChevronRight, TestTube, Globe, Brain, Database, Package, Loader2, Shield, Lock, ClipboardPaste, Edit, Eye, EyeOff } from "lucide-react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
-import { Id } from "@/convex/_generated/dataModel";
+import { useApiKeys, useGenerateApiKey, useRevokeApiKey } from "@/lib/hooks/useApiKeys";
+import { useUserLLMKeys, useUpsertLLMKey, useDeleteLLMKey, useToggleLLMKeyActive } from "@/lib/hooks/useUserLLMKeys";
+import { 
+  useMCPServers, 
+  useAddMCPServer, 
+  useUpdateMCPServer, 
+  useDeleteMCPServer, 
+  useToggleMCPEnabled, 
+  useSeedOfficialMCPs, 
+  useUpdateConnectionStatus, 
+  useCleanupOfficialMCPs 
+} from "@/lib/hooks/useMCPServers";
 import PasteConfigModal from "./PasteConfigModal";
+
+// Type definitions
+type Id<T> = string;
+type UserLLMKey = {
+  id: string;
+  userId: string;
+  provider: string;
+  key: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -63,30 +84,25 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [showAddLLMKey, setShowAddLLMKey] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<'anthropic' | 'openai' | 'groq' | null>(null);
 
-  const apiKeys = useQuery(api.apiKeys.list, {});
-  const generateKey = useMutation(api.apiKeys.generate);
-  const revokeKey = useMutation(api.apiKeys.revoke);
+  const { apiKeys } = useApiKeys();
+  const { generateKey } = useGenerateApiKey();
+  const { revokeKey } = useRevokeApiKey();
 
   // LLM Keys queries and mutations
-  const userLLMKeys = useQuery(api.userLLMKeys.getUserLLMKeys,
-    user?.id ? { userId: user.id } : "skip"
-  );
-  const upsertLLMKey = useMutation(api.userLLMKeys.upsertLLMKey);
-  const deleteLLMKey = useMutation(api.userLLMKeys.deleteLLMKey);
-  const toggleLLMKeyActive = useMutation(api.userLLMKeys.toggleKeyActive);
+  const { userLLMKeys } = useUserLLMKeys();
+  const { upsertLLMKey } = useUpsertLLMKey();
+  const { deleteLLMKey } = useDeleteLLMKey();
+  const { toggleLLMKeyActive } = useToggleLLMKeyActive();
 
   // MCP Registry state
-  const mcpServers = useQuery(api.mcpServers.listUserMCPs,
-    user?.id ? { userId: user.id } : "skip"
-  ) as MCPServer[] | undefined;
-
-  const addMCPServer = useMutation(api.mcpServers.addMCPServer);
-  const updateMCPServer = useMutation(api.mcpServers.updateMCPServer);
-  const deleteMCPServer = useMutation(api.mcpServers.deleteMCPServer);
-  const toggleMCPEnabled = useMutation(api.mcpServers.toggleMCPEnabled);
-  const seedOfficialMCPs = useMutation(api.mcpServers.seedOfficialMCPs);
-  const updateConnectionStatus = useMutation(api.mcpServers.updateConnectionStatus);
-  const cleanupOfficialMCPs = useMutation(api.mcpServers.cleanupOfficialMCPs);
+  const { mcpServers } = useMCPServers();
+  const { addMCPServer } = useAddMCPServer();
+  const { updateMCPServer } = useUpdateMCPServer();
+  const { deleteMCPServer } = useDeleteMCPServer();
+  const { toggleMCPEnabled } = useToggleMCPEnabled();
+  const { seedOfficialMCPs } = useSeedOfficialMCPs();
+  const { updateConnectionStatus } = useUpdateConnectionStatus();
+  const { cleanupOfficialMCPs } = useCleanupOfficialMCPs();
 
   const [expandedMCPs, setExpandedMCPs] = useState<Set<string>>(new Set());
   const [testingMCPs, setTestingMCPs] = useState<Set<string>>(new Set());
@@ -228,7 +244,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                                   <button
                                     onClick={async () => {
                                       if (user?.id) {
-                                        await deleteLLMKey({ id: providerKey._id, userId: user.id });
+                                        await deleteLLMKey({ id: providerKey.id, userId: user.id });
                                         toast.success(`${provider} key removed`);
                                       }
                                     }}
@@ -360,7 +376,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   <div className="space-y-8">
                     {apiKeys?.map((key) => (
                       <div
-                        key={key._id}
+                        key={key.id}
                         className="flex items-center justify-between p-12 bg-background-base rounded-8 border border-border-faint"
                       >
                         <div className="flex-1 min-w-0">
@@ -372,7 +388,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         </div>
                         <button
                           onClick={async () => {
-                            await revokeKey({ id: key._id });
+                            await revokeKey({ id: key.id });
                             toast.success('API key revoked');
                           }}
                           className="p-8 hover:bg-black-alpha-4 rounded-8 transition-colors"
@@ -417,34 +433,34 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   <div className="space-y-8">
                     {mcpServers?.map((server) => (
                       <MCPCard
-                        key={server._id}
+                        key={server.id}
                         server={server}
-                        isExpanded={expandedMCPs.has(server._id)}
-                        isTesting={testingMCPs.has(server._id)}
+                        isExpanded={expandedMCPs.has(server.id)}
+                        isTesting={testingMCPs.has(server.id)}
                         onExpandToggle={() => {
                           const newExpanded = new Set(expandedMCPs);
-                          if (newExpanded.has(server._id)) {
-                            newExpanded.delete(server._id);
+                          if (newExpanded.has(server.id)) {
+                            newExpanded.delete(server.id);
                           } else {
-                            newExpanded.add(server._id);
+                            newExpanded.add(server.id);
                           }
                           setExpandedMCPs(newExpanded);
                         }}
                         onToggle={async () => {
-                          await toggleMCPEnabled({ id: server._id });
+                          await toggleMCPEnabled({ id: server.id });
                           toast.success(`${server.name} ${server.enabled ? 'disabled' : 'enabled'}`);
                         }}
                         onTest={async () => {
-                          setTestingMCPs(prev => new Set(Array.from(prev).concat(server._id)));
+                          setTestingMCPs(prev => new Set(Array.from(prev).concat(server.id)));
                           try {
                             // Actually test the connection and discover tools
                             const response = await fetch('/api/test-mcp-connection', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
-                                url: server.url,
-                                authToken: server.accessToken,
-                                headers: server.headers,
+                                serverUrl: server.url,
+                                apiKey: server.accessToken,
+                                serverType: server.url.includes('firecrawl') ? 'firecrawl' : 'generic',
                               }),
                             });
 
@@ -453,14 +469,14 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             if (result.success) {
                               // Update with real discovered tools
                               await updateConnectionStatus({
-                                id: server._id,
+                                id: server.id,
                                 status: "connected",
                                 tools: result.tools || []
                               });
                               toast.success(`Connected to ${server.name} - ${result.tools?.length || 0} tools discovered`);
                             } else {
                               await updateConnectionStatus({
-                                id: server._id,
+                                id: server.id,
                                 status: "error",
                                 error: result.error || "Connection failed"
                               });
@@ -478,7 +494,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                           } finally {
                             setTestingMCPs(prev => {
                               const newSet = new Set(prev);
-                              newSet.delete(server._id);
+                              newSet.delete(server.id);
                               return newSet;
                             });
                           }
@@ -489,7 +505,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         }}
                         onDelete={async () => {
                           if (confirm(`Delete ${server.name}?`)) {
-                            await deleteMCPServer({ id: server._id });
+                            await deleteMCPServer({ id: server.id });
                             toast.success(`${server.name} deleted`);
                           }
                         }}
@@ -689,9 +705,9 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      url: server.url,
-                      authToken: server.accessToken,
-                      headers: server.headers,
+                      serverUrl: server.url,
+                      apiKey: server.accessToken,
+                      serverType: server.url.includes('firecrawl') ? 'firecrawl' : 'generic',
                     }),
                   });
 
@@ -1066,8 +1082,9 @@ function AddMCPModal({ isOpen, onClose, onSave, editingServer }: AddMCPModalProp
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      url: formData.url,
-                      authToken: formData.accessToken,
+                      serverUrl: formData.url,
+                      apiKey: formData.accessToken,
+                      serverType: formData.url.includes('firecrawl') ? 'firecrawl' : 'generic',
                     }),
                   });
 

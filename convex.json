@@ -5,5 +5,6 @@
       "@langchain/core",
       "@anthropic-ai/sdk"
     ]
-  }
+  },
+  "deployment": "oceanic-ostrich-181"
 }

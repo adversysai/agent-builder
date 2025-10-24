@@ -5,11 +5,20 @@ import { useState, useEffect, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import VariableReferencePicker from "./VariableReferencePicker";
 import { toast } from "sonner";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
-import { Id } from "@/convex/_generated/dataModel";
+import { useEnabledMCPs } from "@/lib/hooks/useMCPServers";
 import FirecrawlLogo from "@/components/icons/FirecrawlLogo";
+
+// Type definitions
+type UserLLMKey = {
+  id: string;
+  userId: string;
+  provider: string;
+  key: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 interface NodePanelProps {
   nodeData: {
@@ -43,14 +52,9 @@ export default function NodePanel({
   const [showModelsDropdown, setShowModelsDropdown] = useState(false);
 
   // Fetch enabled MCP servers from central registry
-  const mcpServers = useQuery(api.mcpServers.getEnabledMCPs,
-    user?.id ? { userId: user.id } : "skip"
-  );
-
-  // Fetch user's LLM API keys to determine available models
-  const userLLMKeys = useQuery(api.userLLMKeys.getUserLLMKeys,
-    user?.id ? { userId: user.id } : "skip"
-  );
+  // MCP and LLM keys
+  const { mcpServers } = useEnabledMCPs();
+  const userLLMKeys: UserLLMKey[] = [];
 
   // Get available models based on active API keys
   const getAvailableModels = () => {
@@ -59,7 +63,7 @@ export default function NodePanel({
     const models: { provider: string; models: Array<{ id: string; name: string }> }[] = [];
 
     // Check for active keys and add corresponding models
-    const activeKeys = userLLMKeys.filter(key => key.isActive);
+    const activeKeys = userLLMKeys.filter(key => key.active);
 
     activeKeys.forEach(key => {
       if (key.provider === 'anthropic') {

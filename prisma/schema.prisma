@@ -1,0 +1,118 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String?
+  name      String?
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  workflows     Workflow[]
+  executions    WorkflowExecution[]
+  userApiKeys   UserApiKey[]
+  approvals     Approval[]
+
+  @@map("user")
+}
+
+model Workflow {
+  id          String   @id @default(cuid())
+  customId    String?  @unique
+  userId      String?
+  name        String
+  description String?
+  category    String?
+  tags        String[]
+  difficulty  String?
+  estimatedTime String?
+  nodes       Json
+  edges       Json
+  version     String?
+  isTemplate  Boolean  @default(false)
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user       User?              @relation(fields: [userId], references: [id])
+  executions WorkflowExecution[]
+  approvals  Approval[]
+
+  @@map("workflow")
+}
+
+model WorkflowExecution {
+  id           String   @id @default(cuid())
+  workflowId   String
+  userId       String?
+  status       String   // "running" | "completed" | "failed" | "paused"
+  input        Json?
+  output       Json?
+  nodeResults  Json     @default("{}")
+  variables    Json     @default("{}")
+  threadId     String?
+  currentNodeId String?
+  error        String?
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  workflow Workflow @relation(fields: [workflowId], references: [id])
+  user     User?    @relation(fields: [userId], references: [id])
+
+  @@map("workflowExecution")
+}
+
+model UserApiKey {
+  id           String    @id @default(cuid())
+  userId       String
+  provider     String    // "anthropic" | "openai" | "groq"
+  encryptedKey String
+  keyPrefix    String
+  label        String?
+  isActive     Boolean   @default(true)
+  usageCount   Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastUsedAt   DateTime?
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("userApiKeys")
+}
+
+model Approval {
+  id          String    @id @default(cuid())
+  approvalId  String    @unique
+  workflowId   String
+  executionId String?
+  nodeId      String?
+  message     String
+  status      String    // "pending" | "approved" | "rejected"
+  userId      String?
+  createdBy   String?
+  respondedBy String?
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  // Relations
+  workflow Workflow @relation(fields: [workflowId], references: [id])
+  user     User?    @relation(fields: [userId], references: [id])
+
+  @@map("approvals")
+}

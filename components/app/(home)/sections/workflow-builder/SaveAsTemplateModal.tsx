@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, Tag, FolderOpen, Clock, BarChart3, Globe, Lock, Info } from "lucide-react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useSaveAsTemplate } from "@/lib/hooks/useTemplates";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 
@@ -40,7 +39,7 @@ export default function SaveAsTemplateModal({
   workflowName,
 }: SaveAsTemplateModalProps) {
   const { user } = useUser();
-  const saveAsTemplate = useMutation(api.templates.saveAsTemplate);
+  const { saveAsTemplate } = useSaveAsTemplate();
 
   const [formData, setFormData] = useState({
     name: `${workflowName} Template`,

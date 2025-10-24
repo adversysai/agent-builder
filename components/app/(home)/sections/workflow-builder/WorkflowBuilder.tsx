@@ -64,8 +64,7 @@ import type { WorkflowNode, WorkflowEdge } from "@/lib/workflow/types";
 import { nodeTypes } from "./CustomNodes";
 import { detectDuplicateCredentials } from "@/lib/workflow/duplicate-detection";
 import { cleanupInvalidEdges } from "@/lib/workflow/edge-cleanup";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useTemplateByCustomId, useUpdateTemplateStructure } from "@/lib/hooks/useWorkflows";
 
 interface WorkflowBuilderProps {
   onBack: () => void;
@@ -242,11 +241,9 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
   const [initialized, setInitialized] = useState(false);
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(initialTemplateId ?? null);
 
-  // Convex queries and mutations for templates
-  const template = useQuery(api.workflows.getTemplateByCustomId,
-    currentTemplateId ? { customId: currentTemplateId } : "skip"
-  );
-  const updateTemplateStructure = useMutation(api.workflows.updateTemplateStructure);
+  // Database queries and mutations for templates
+  const { template } = useTemplateByCustomId(currentTemplateId);
+  const { updateTemplateStructure } = useUpdateTemplateStructure();
 
   // Function to seed templates via API
   const seedTemplates = async () => {
@@ -288,7 +285,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
   const { screenToFlowPosition, getNode, setCenter } = useReactFlow();
 
   // Workflow management
-  const { workflow, convexId, updateNodes, updateEdges, saveWorkflow, saveWorkflowImmediate, deleteWorkflow, createNewWorkflow } = useWorkflow(initialWorkflowId || undefined);
+  const { workflow, currentWorkflowId, updateNodes, updateEdges, saveWorkflow, saveWorkflowImmediate, deleteWorkflow, createNewWorkflow } = useWorkflow(initialWorkflowId || undefined);
 
   // AUTO-SAVE DISABLED - Use manual Save button instead
   // Smart auto-save: only save when nodes/edges actually change, with debounce
@@ -1470,7 +1467,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
               </button>
               <button
                 onClick={() => {
-                  if (!convexId) {
+                  if (!currentWorkflowId) {
                     toast.error('Please save the workflow first', {
                       description: 'Make some changes and wait for auto-save to complete'
                     });
@@ -1732,11 +1729,10 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
           />
         ) : (selectedNode?.data as any)?.nodeType === 'extract' ? (
           <ExtractNodePanel
-            node={selectedNode}
-            nodes={nodes}
+            nodeData={selectedNode?.data}
+            onUpdate={(nodeId, updates) => handleUpdateNodeData(nodeId, updates)}
             onClose={() => setSelectedNode(null)}
-            onDelete={handleDeleteNode}
-            onUpdate={handleUpdateNodeData}
+            onAddMCP={() => setShowSettings(true)}
           />
         ) : (selectedNode?.data as any)?.nodeType === 'http' ? (
           <HTTPNodePanel
@@ -1824,7 +1820,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
       <SaveAsTemplateModal
         isOpen={showSaveAsTemplateModal}
         onClose={() => setShowSaveAsTemplateModal(false)}
-        workflowId={convexId || ''}
+        workflowId={currentWorkflowId || ''}
         workflowName={workflow?.name || 'Workflow'}
       />
 

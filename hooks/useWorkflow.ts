@@ -16,8 +16,8 @@ export function useWorkflow(workflowId?: string) {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [convexId, setConvexId] = useState<string | null>(null); // Track Convex ID
-  const saveToConvexTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(null); // Track workflow ID
+  const saveToDatabaseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load workflow from Redis via API
   useEffect(() => {
@@ -49,13 +49,13 @@ export function useWorkflow(workflowId?: string) {
             }
 
             setWorkflow(workflowData);
-            // Store the Convex ID for future saves
-            setConvexId(workflowData._convexId || workflowData._id || null);
+            // Store the workflow ID for future saves
+            setCurrentWorkflowId(workflowData.id || null);
           } else {
             createNewWorkflow();
           }
         } catch (error) {
-          console.error('Failed to load workflow from Convex:', error);
+          console.error('Failed to load workflow from database:', error);
           createNewWorkflow();
         }
       } else {
@@ -152,7 +152,7 @@ export function useWorkflow(workflowId?: string) {
 
       setWorkflow(newWorkflow);
 
-      // Save immediately to Convex
+      // Save immediately to database
       try {
         const response = await fetch('/api/workflows', {
           method: 'POST',
@@ -160,14 +160,14 @@ export function useWorkflow(workflowId?: string) {
           body: JSON.stringify(newWorkflow),
         });
         const data = await response.json();
-        console.log('💾 New workflow saved to Convex:', data.success ? 'SUCCESS' : 'FAILED');
+        console.log('💾 New workflow saved to database:', data.success ? 'SUCCESS' : 'FAILED');
 
-        // Store the Convex ID from the response
+        // Store the workflow ID from the response
         if (data.success && data.workflowId) {
-          setConvexId(data.workflowId);
+          setCurrentWorkflowId(data.workflowId);
         }
       } catch (error) {
-        console.error('Failed to save new workflow to Convex:', error);
+        console.error('Failed to save new workflow to database:', error);
       }
       return;
     }
@@ -181,12 +181,12 @@ export function useWorkflow(workflowId?: string) {
     setWorkflow(updated);
 
     // Clear any pending save timeout
-    if (saveToConvexTimeoutRef.current) {
-      clearTimeout(saveToConvexTimeoutRef.current);
+    if (saveToDatabaseTimeoutRef.current) {
+      clearTimeout(saveToDatabaseTimeoutRef.current);
     }
 
-    // Debounce the save to Convex to prevent rapid saves
-    saveToConvexTimeoutRef.current = setTimeout(async () => {
+    // Debounce the save to database to prevent rapid saves
+    saveToDatabaseTimeoutRef.current = setTimeout(async () => {
       try {
         const response = await fetch('/api/workflows', {
           method: 'POST',
@@ -194,17 +194,17 @@ export function useWorkflow(workflowId?: string) {
           body: JSON.stringify(updated),
         });
         const data = await response.json();
-        console.log('💾 [AUTO-SAVE] Workflow synced to Convex:', data.success ? '✅ SUCCESS' : '❌ FAILED');
+        console.log('💾 [AUTO-SAVE] Workflow synced to NeonDB:', data.success ? '✅ SUCCESS' : '❌ FAILED');
 
-        // Store the Convex ID from the response
+        // Store the workflow ID from the response
         if (data.success && data.workflowId) {
-          setConvexId(data.workflowId);
+          setCurrentWorkflowId(data.workflowId);
         }
 
         // Don't reload workflows on every save - only when explicitly needed
         // This prevents unnecessary re-fetches and duplicate saves
       } catch (error) {
-        console.error('❌ Failed to save workflow to Convex:', error);
+        console.error('❌ Failed to save workflow to database:', error);
       }
     }, 1000); // 1000ms debounce to batch rapid saves
   }, [workflow, loadWorkflows]);
@@ -266,9 +266,9 @@ export function useWorkflow(workflowId?: string) {
     setWorkflow(updated);
 
     // Cancel any pending debounced saves
-    if (saveToConvexTimeoutRef.current) {
-      clearTimeout(saveToConvexTimeoutRef.current);
-      saveToConvexTimeoutRef.current = null;
+    if (saveToDatabaseTimeoutRef.current) {
+      clearTimeout(saveToDatabaseTimeoutRef.current);
+      saveToDatabaseTimeoutRef.current = null;
     }
 
     // Save immediately without debounce
@@ -279,10 +279,10 @@ export function useWorkflow(workflowId?: string) {
         body: JSON.stringify(updated),
       });
       const data = await response.json();
-      console.log('💾 [IMMEDIATE SAVE] Workflow saved to Convex:', data.success ? '✅ SUCCESS' : '❌ FAILED');
+      console.log('💾 [IMMEDIATE SAVE] Workflow saved to NeonDB:', data.success ? '✅ SUCCESS' : '❌ FAILED');
 
       if (data.success && data.workflowId) {
-        setConvexId(data.workflowId);
+        setCurrentWorkflowId(data.workflowId);
       }
 
       return data.success;
@@ -296,7 +296,7 @@ export function useWorkflow(workflowId?: string) {
     workflow,
     workflows,
     loading,
-    convexId, // Expose Convex ID for templates and other features
+    currentWorkflowId, // Expose workflow ID for templates and other features
     saveWorkflow,
     saveWorkflowImmediate, // Non-debounced save for before execution
     updateNodes,

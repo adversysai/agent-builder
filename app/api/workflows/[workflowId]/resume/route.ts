@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getConvexClient, getAuthenticatedConvexClient, api, isConvexConfigured } from '@/lib/convex/client';
 import { LangGraphExecutor } from '@/lib/workflow/langgraph';
 import { validateApiKey, createUnauthorizedResponse } from '@/lib/api/auth';
+import { getWorkflow } from '@/lib/database/workflows';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,29 +45,8 @@ export async function POST(
           return;
         }
 
-        // Get workflow from Convex
-        if (!isConvexConfigured()) {
-          sendEvent('error', { error: 'Convex not configured' });
-          controller.close();
-          return;
-        }
-
-        const convex = await getAuthenticatedConvexClient();
-
-        // Look up workflow
-        let workflowDoc = await convex.query(api.workflows.getWorkflowByCustomId, {
-          customId: workflowId,
-        });
-
-        if (!workflowDoc && workflowId.startsWith('j')) {
-          try {
-            workflowDoc = await convex.query(api.workflows.getWorkflow, {
-              id: workflowId as any,
-            });
-          } catch (e) {
-            // Not a valid Convex ID
-          }
-        }
+        // Get workflow from database
+        const workflowDoc = await getWorkflow(workflowId);
 
         if (!workflowDoc) {
           sendEvent('error', { error: `Workflow ${workflowId} not found` });
@@ -84,13 +63,13 @@ export async function POST(
         const { getLLMApiKey } = await import('@/lib/api/llm-keys');
         const userId = authResult.userId;
         
-        const apiKeys = {
-          anthropic: userId ? await getLLMApiKey('anthropic', userId) : null || process.env.ANTHROPIC_API_KEY,
-          groq: userId ? await getLLMApiKey('groq', userId) : null || process.env.GROQ_API_KEY,
-          openai: userId ? await getLLMApiKey('openai', userId) : null || process.env.OPENAI_API_KEY,
-          firecrawl: process.env.FIRECRAWL_API_KEY, // Firecrawl keys are still environment-only for now
-          arcade: process.env.ARCADE_API_KEY,
-        };
+    const apiKeys = {
+      anthropic: (userId ? await getLLMApiKey('anthropic', userId) : undefined) || process.env.ANTHROPIC_API_KEY,
+      groq: (userId ? await getLLMApiKey('groq', userId) : undefined) || process.env.GROQ_API_KEY,
+      openai: (userId ? await getLLMApiKey('openai', userId) : undefined) || process.env.OPENAI_API_KEY,
+      firecrawl: process.env.FIRECRAWL_API_KEY, // Firecrawl keys are still environment-only for now
+      arcade: process.env.ARCADE_API_KEY,
+    };
 
         const nodeResults: Record<string, any> = {};
 

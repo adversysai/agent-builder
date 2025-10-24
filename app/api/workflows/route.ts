@@ -1,29 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getConvexClient, getAuthenticatedConvexClient, api, isConvexConfigured } from '@/lib/convex/client';
+import { listWorkflows, saveWorkflow, deleteWorkflow } from '@/lib/database/workflows';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/workflows - List all workflows
- * Uses Convex for storage
+ * Uses NeonDB for storage
  */
 export async function GET(request: NextRequest) {
   try {
-    if (!isConvexConfigured()) {
-      return NextResponse.json({
-        workflows: [],
-        total: 0,
-        source: 'none',
-        message: 'Convex not configured. Add NEXT_PUBLIC_CONVEX_URL to .env.local',
-      });
-    }
-
-    const convex = await getAuthenticatedConvexClient();
-    const workflows = await convex.query(api.workflows.listWorkflows, {});
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+    
+    const workflows = await listWorkflows(userId || undefined);
 
     return NextResponse.json({
       workflows: workflows.map((w: any) => ({
-        id: w.customId || w._id, // Use customId if exists, otherwise Convex ID
+        id: w.customId || w.id,
         name: w.name,
         description: w.description,
         category: w.category,
@@ -38,7 +31,7 @@ export async function GET(request: NextRequest) {
         edgeCount: w.edges?.length || 0,
       })),
       total: workflows.length,
-      source: 'convex',
+      source: 'neondb',
     });
   } catch (error) {
     console.error('Error fetching workflows:', error);
@@ -53,7 +46,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/workflows - Save a workflow to Convex
+ * POST /api/workflows - Save a workflow to NeonDB
  */
 export async function POST(request: NextRequest) {
   try {
@@ -82,13 +75,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isConvexConfigured()) {
-      return NextResponse.json({
-        success: false,
-        message: 'Convex not configured. Add NEXT_PUBLIC_CONVEX_URL to .env.local',
-      }, { status: 500 });
-    }
-
     // Validate workflow has required fields
     if (!workflow.nodes || !Array.isArray(workflow.nodes)) {
       return NextResponse.json(
@@ -104,13 +90,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const convex = await getAuthenticatedConvexClient();
+    // Get user ID from request headers or use a default
+    const userId = workflow.userId || 'system-user';
 
-    // Use workflow.id as customId for Convex
-    const customId = workflow.id || `workflow_${Date.now()}`;
-
-    const savedId = await convex.mutation(api.workflows.saveWorkflow, {
-      customId,
+    const savedWorkflow = await saveWorkflow({
+      id: workflow.id,
+      customId: workflow.id,
+      userId: userId,
       name: workflow.name || 'Untitled Workflow',
       description: workflow.description,
       category: workflow.category,
@@ -119,14 +105,14 @@ export async function POST(request: NextRequest) {
       estimatedTime: workflow.estimatedTime,
       nodes: workflow.nodes,
       edges: workflow.edges,
-      version: workflow.version,
-      isTemplate: workflow.isTemplate,
+      // settings: workflow.settings || {}, // Removed settings as it's not in the Workflow type
+      isTemplate: workflow.isTemplate || false,
     });
 
     return NextResponse.json({
       success: true,
-      workflowId: savedId,
-      source: 'convex',
+      workflowId: savedWorkflow?.id,
+      source: 'neondb',
       message: 'Workflow saved successfully',
     });
   } catch (error) {
@@ -142,7 +128,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * DELETE /api/workflows?id=xxx - Delete a workflow from Convex
+ * DELETE /api/workflows?id=xxx - Delete a workflow from NeonDB
  */
 export async function DELETE(request: NextRequest) {
   try {
@@ -156,46 +142,18 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    if (!isConvexConfigured()) {
-      return NextResponse.json({
-        success: false,
-        message: 'Convex not configured',
-      }, { status: 500 });
-    }
+    const result = await deleteWorkflow(workflowId);
 
-    const convex = await getAuthenticatedConvexClient();
-
-    // Look up workflow by customId first, then try Convex ID
-    let workflow = await convex.query(api.workflows.getWorkflowByCustomId, {
-      customId: workflowId,
-    });
-
-    // If not found and looks like Convex ID, try direct lookup
-    if (!workflow && workflowId.startsWith('j')) {
-      try {
-        workflow = await convex.query(api.workflows.getWorkflow, {
-          id: workflowId as any,
-        });
-      } catch (e) {
-        // Not a valid Convex ID
-      }
-    }
-
-    if (!workflow) {
+    if (!result) {
       return NextResponse.json(
         { error: `Workflow ${workflowId} not found` },
         { status: 404 }
       );
     }
 
-    // Delete using Convex ID
-    await convex.mutation(api.workflows.deleteWorkflow, {
-      id: workflow._id,
-    });
-
     return NextResponse.json({
       success: true,
-      source: 'convex',
+      source: 'neondb',
       message: 'Workflow deleted successfully',
     });
   } catch (error) {

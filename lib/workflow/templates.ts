@@ -171,7 +171,7 @@ Example for Tesla:
 Use Firecrawl MCP to search and scrape Yahoo Finance.
 
 Format as a brief summary (3-4 sentences).`,
-          model: 'anthropic/claude-sonnet-4-20250514',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
           outputFormat: 'Text',
           mcpTools: [
             {
@@ -365,7 +365,7 @@ Simple 4-node workflow!`,
           label: 'Research Stock',
           nodeName: 'Research Stock',
           instructions: 'Search Yahoo Finance for ticker ' + '{{input.ticker}}' + ' and gather:\n- Current price\n- Daily change ($ and %)\n- Market cap\n- P/E ratio\n- 52-week high/low\n- Top 2 recent news headlines\n\nUse Firecrawl MCP to search and scrape the data.',
-          model: 'anthropic/claude-sonnet-4-20250514',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
           outputFormat: 'Text',
           mcpTools: [
             {
@@ -386,7 +386,7 @@ Simple 4-node workflow!`,
           label: 'Write Report',
           nodeName: 'Write Report',
           instructions: 'Write a professional stock analysis report for ' + '{{input.ticker}}' + ' using this research:\n\n' + '{{lastOutput}}' + '\n\nInclude:\n- Executive Summary (3 sentences)\n- Key Metrics table\n- Performance Analysis\n- Recent News Summary\n- Investment Recommendation\n\nMake it professional and well-formatted.',
-          model: 'anthropic/claude-sonnet-4-20250514',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
           outputFormat: 'Text',
         },
       },
@@ -704,7 +704,7 @@ Great for: Shopping decisions, price research`,
    - Top 3-5 customer review summaries
 
 Return all extracted data in a clear format.`,
-          model: 'anthropic/claude-sonnet-4-20250514',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
           outputFormat: 'Text',
           mcpTools: [
             {
@@ -749,7 +749,7 @@ Clear BUY or SKIP recommendation with reasoning (2-3 sentences).
 
 ## Best For
 Who would benefit most from this product?`,
-          model: 'anthropic/claude-sonnet-4-20250514',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
           outputFormat: 'Text',
         },
       },
@@ -868,7 +868,7 @@ Intermediate complexity with loops!`,
 '}\n' +
 '\n' +
 'Return ONLY the JSON, no other text.',
-          model: 'anthropic/claude-sonnet-4-20250514',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
           outputFormat: 'JSON',
           jsonOutputSchema: JSON.stringify({
             type: 'object',

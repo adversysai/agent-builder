@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getConvexClient, getAuthenticatedConvexClient, api, isConvexConfigured } from '@/lib/convex/client';
 import { LangGraphExecutor } from '@/lib/workflow/langgraph';
 import { validateApiKey, createUnauthorizedResponse } from '@/lib/api/auth';
+import { getWorkflow } from '@/lib/database/workflows';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * Streaming workflow execution with real-time updates
  * Uses Server-Sent Events (SSE) to stream node execution progress
  *
- * Uses LangGraph executor for state management with Convex storage
+ * Uses LangGraph executor for state management with database storage
  */
 export async function POST(
   request: NextRequest,
@@ -41,33 +41,8 @@ export async function POST(
         const body = await request.json();
         const inputs = body || {};
 
-        // Get workflow from Convex
-        if (!isConvexConfigured()) {
-          sendEvent('error', {
-            error: 'Convex not configured',
-            workflowId,
-          });
-          controller.close();
-          return;
-        }
-
-        const convex = await getAuthenticatedConvexClient();
-
-        // Look up workflow - try customId first, then try as Convex ID
-        let workflowDoc = await convex.query(api.workflows.getWorkflowByCustomId, {
-          customId: workflowId,
-        });
-
-        // If not found by customId and looks like Convex ID, try direct lookup
-        if (!workflowDoc && workflowId.startsWith('j')) {
-          try {
-            workflowDoc = await convex.query(api.workflows.getWorkflow, {
-              id: workflowId as any,
-            });
-          } catch (e) {
-            // Not a valid Convex ID
-          }
-        }
+        // Get workflow from database
+        const workflowDoc = await getWorkflow(workflowId);
 
         if (!workflowDoc) {
           sendEvent('error', {
@@ -78,10 +53,10 @@ export async function POST(
           return;
         }
 
-        // Convert Convex document to workflow format
+        // Use workflow data directly
         const workflowData = {
           ...workflowDoc,
-          id: workflowDoc.customId || workflowDoc._id, // Use customId if exists, otherwise Convex ID
+          id: workflowDoc.customId || workflowDoc.id, // Use customId if exists, otherwise database ID
         };
 
         if (!workflowData) {
@@ -112,9 +87,9 @@ export async function POST(
         const userId = authResult.userId;
         
         const apiKeys = {
-          anthropic: userId ? await getLLMApiKey('anthropic', userId) : null || process.env.ANTHROPIC_API_KEY,
-          groq: userId ? await getLLMApiKey('groq', userId) : null || process.env.GROQ_API_KEY,
-          openai: userId ? await getLLMApiKey('openai', userId) : null || process.env.OPENAI_API_KEY,
+          anthropic: (userId ? await getLLMApiKey('anthropic', userId) : undefined) || process.env.ANTHROPIC_API_KEY,
+          groq: (userId ? await getLLMApiKey('groq', userId) : undefined) || process.env.GROQ_API_KEY,
+          openai: (userId ? await getLLMApiKey('openai', userId) : undefined) || process.env.OPENAI_API_KEY,
           firecrawl: process.env.FIRECRAWL_API_KEY, // Firecrawl keys are still environment-only for now
           arcade: process.env.ARCADE_API_KEY,
         };
@@ -224,8 +199,8 @@ export async function POST(
                 timestamp: new Date().toISOString(),
               });
 
-              // TODO: Save execution state to Convex for resume capability
-              // await convex.mutation(api.executions.createExecution, {...})
+              // TODO: Save execution state to database for resume capability
+              // await createExecution({...})
 
               controller.close();
               return;
@@ -252,8 +227,8 @@ export async function POST(
           timestamp: new Date().toISOString(),
         });
 
-        // TODO: Save execution results to Convex
-        // await convex.mutation(api.executions.completeExecution, {...})
+        // TODO: Save execution results to database
+        // await completeExecution({...})
 
         controller.close();
       } catch (error) {

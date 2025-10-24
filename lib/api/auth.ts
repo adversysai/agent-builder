@@ -5,8 +5,8 @@
  */
 
 import { NextRequest } from 'next/server';
-import { getConvexClient, api } from '@/lib/convex/client';
 import { auth } from '@clerk/nextjs/server';
+import { db } from '@/lib/database/client';
 
 export interface ApiAuthResult {
   authenticated: boolean;
@@ -59,20 +59,22 @@ export async function validateApiKey(request: NextRequest): Promise<ApiAuthResul
       };
     }
 
-    // Verify key with Convex
-    const convex = getConvexClient();
-    const result = await convex.mutation(api.apiKeys.verify, { key: apiKey });
+    // Verify key with database
+    const result = await db.query(
+      'SELECT "userId" FROM "userApiKey" WHERE key = $1 AND "revokedAt" IS NULL',
+      [apiKey]
+    );
 
-    if (!result.valid) {
+    if (result.rows.length === 0) {
       return {
         authenticated: false,
-        error: result.error || 'Invalid API key'
+        error: 'Invalid API key'
       };
     }
 
     return {
       authenticated: true,
-      userId: result.userId,
+      userId: result.rows[0].userId,
       authType: 'api-key'
     };
   } catch (error) {
