@@ -176,9 +176,7 @@ function StyleGuidePageContent() {
                   <HomeHeroTitle />
 
                   <p className="text-center text-body-large">
-                    Build intelligent web scraping workflows powered by AI.
-                    <br className="lg-max:hidden" />
-                    Turn any website into structured, agent-ready data.
+                    AI WORKFLOW AUTOMATION
                     <Link
                       className="bg-black-alpha-4 hover:bg-black-alpha-6 lg:ml-4 rounded-6 px-8 lg:px-6 text-label-large lg-max:py-2 h-30 lg:h-24 block lg-max:mt-8 lg-max:mx-auto lg-max:w-max lg:inline-block gap-4 transition-all"
                       href="https://firecrawl.dev"
@@ -231,7 +229,7 @@ function StyleGuidePageContent() {
               <SignedIn>
                 <button
                   onClick={handleSubmit}
-                  className="bg-heat-100 hover:bg-heat-200 text-white font-medium px-32 py-12 rounded-10 transition-all active:scale-[0.98] text-body-medium shadow-md cursor-pointer"
+                  className="bg-heat-100 hover:bg-heat-200 text-white hover:text-[#33ad13] font-medium px-32 py-12 rounded-10 transition-all active:scale-[0.98] text-body-medium shadow-md cursor-pointer"
                 >
                   Start building
                 </button>
@@ -240,7 +238,7 @@ function StyleGuidePageContent() {
               {/* When signed out - open sign-in modal */}
               <SignedOut>
                 <SignInButton mode="modal">
-                  <button className="bg-heat-100 hover:bg-heat-200 text-white font-medium px-32 py-12 rounded-10 transition-all active:scale-[0.98] text-body-medium shadow-md cursor-pointer">
+                  <button className="bg-heat-100 hover:bg-heat-200 text-white hover:text-[#33ad13] font-medium px-32 py-12 rounded-10 transition-all active:scale-[0.98] text-body-medium shadow-md cursor-pointer">
                     Start building
                   </button>
                 </SignInButton>

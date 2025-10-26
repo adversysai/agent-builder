@@ -46,7 +46,14 @@ export async function listWorkflows(userId?: string) {
     `, [userId]);
     return result.rows;
   }
-  return [];
+  
+  // If no userId provided, return all non-template workflows
+  const result = await db.query(`
+    SELECT * FROM workflow 
+    WHERE "isTemplate" = false 
+    ORDER BY "createdAt" DESC
+  `);
+  return result.rows;
 }
 
 // Get workflow by ID (supports both UUID and custom ID)
@@ -98,7 +105,7 @@ export async function saveWorkflow(workflow: Partial<Workflow>) {
         RETURNING *
       `, [
         workflow.name, workflow.description, workflow.category, 
-        workflow.tags, workflow.difficulty, workflow.estimatedTime,
+        JSON.stringify(workflow.tags), workflow.difficulty, workflow.estimatedTime,
         JSON.stringify(workflow.nodes), JSON.stringify(workflow.edges),
         workflow.isTemplate, now, workflow.customId
       ]);
@@ -116,7 +123,7 @@ export async function saveWorkflow(workflow: Partial<Workflow>) {
     RETURNING *
   `, [
     workflow.customId, workflow.userId, workflow.name, workflow.description,
-    workflow.category, workflow.tags, workflow.difficulty, workflow.estimatedTime,
+    workflow.category, JSON.stringify(workflow.tags), workflow.difficulty, workflow.estimatedTime,
     JSON.stringify(workflow.nodes), JSON.stringify(workflow.edges),
     workflow.isTemplate || false,
     now, now
@@ -135,10 +142,23 @@ export async function getTemplates() {
   return result.rows;
 }
 
-// Delete workflow
+// Delete workflow (supports both UUID and custom ID)
 export async function deleteWorkflow(id: string) {
-  await db.query('DELETE FROM workflow WHERE id = $1', [id]);
-  return { success: true };
+  // First try to delete by UUID (if it looks like a UUID)
+  if (id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    const result = await db.query('DELETE FROM workflow WHERE id = $1', [id]);
+    if ((result.rowCount ?? 0) > 0) {
+      return { success: true };
+    }
+  }
+  
+  // If not found by UUID or doesn't look like UUID, try customId
+  const result = await db.query('DELETE FROM workflow WHERE "customId" = $1', [id]);
+  if ((result.rowCount ?? 0) > 0) {
+    return { success: true };
+  }
+  
+  return null; // Not found
 }
 
 // Update template structure

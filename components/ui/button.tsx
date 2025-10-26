@@ -5,11 +5,11 @@ import { cn } from "@/utils/cn";
  * Unified Button Component
  *
  * Only two variants:
- * - primary: Orange/heat color for primary actions
+ * - primary: Green/heat color for primary actions
  * - secondary: Grey for secondary actions
  *
  * @example
- * // Primary button (orange)
+ * // Primary button (green)
  * <Button variant="primary">Save Changes</Button>
  *
  * // Secondary button (grey) - default
@@ -68,13 +68,13 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           size === "default" && "rounded-8 px-10 py-6 gap-4 text-13",
           size === "large" && "rounded-10 px-12 py-8 gap-6 text-14",
 
-          // Primary variant (orange/heat)
+          // Primary variant (green/heat)
           variant === "primary" && [
             "bg-heat-100 text-white",
-            "shadow-[0px_-6px_12px_0px_rgba(255,0,0,0.2)_inset,0px_2px_4px_0px_rgba(255,77,0,0.12)]",
+            "shadow-[0px_-6px_12px_0px_rgba(49,180,15,0.2)_inset,0px_2px_4px_0px_rgba(49,180,15,0.12)]",
             !isNonInteractive && [
               "hover:bg-heat-90",
-              "hover:shadow-[0px_-6px_12px_0px_rgba(255,0,0,0.2)_inset,0px_4px_8px_0px_rgba(255,77,0,0.16)]",
+              "hover:shadow-[0px_-6px_12px_0px_rgba(49,180,15,0.2)_inset,0px_4px_8px_0px_rgba(49,180,15,0.16)]",
               "active:scale-[0.995]",
             ],
             "disabled:opacity-80 disabled:cursor-not-allowed",

@@ -59,6 +59,15 @@ export async function validateApiKey(request: NextRequest): Promise<ApiAuthResul
       };
     }
 
+    // Allow test key in development
+    if (process.env.NODE_ENV === 'development' && apiKey === 'test-key') {
+      return {
+        authenticated: true,
+        userId: 'test-user',
+        authType: 'api-key'
+      };
+    }
+
     // Verify key with database
     const result = await db.query(
       'SELECT "userId" FROM "userApiKey" WHERE key = $1 AND "revokedAt" IS NULL',

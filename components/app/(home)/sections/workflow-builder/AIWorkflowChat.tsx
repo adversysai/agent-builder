@@ -1,0 +1,686 @@
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, Send, Bot, User, Loader2, CheckCircle, AlertCircle, Eye, Download, Sparkles, MessageSquare, Trash2, Globe, BarChart3, ShoppingCart, Calendar, Heart, Braces } from 'lucide-react';
+import { toast } from 'sonner';
+import { Workflow } from '@/lib/workflow/types';
+
+interface AIWorkflowChatProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onApplyWorkflow: (workflow: Workflow) => void;
+  currentWorkflow?: {
+    nodes: any[];
+    edges: any[];
+    name?: string;
+    description?: string;
+  };
+}
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  workflow?: Workflow;
+  thinking?: string;
+  error?: string;
+  tokenCount?: {
+    input: number;
+    output: number;
+    total: number;
+  };
+}
+
+// Utility function to estimate token count (rough approximation)
+const estimateTokenCount = (text: string): number => {
+  // Rough approximation: 1 token ≈ 4 characters for English text
+  return Math.ceil(text.length / 4);
+};
+
+export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, currentWorkflow }: AIWorkflowChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<any[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Focus input when panel opens
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isOpen]);
+
+  // Handle Escape key to close chat
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  const handleSendMessage = async () => {
+    if (!input.trim() || isGenerating) return;
+
+    const inputTokens = estimateTokenCount(input.trim());
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: input.trim(),
+      timestamp: new Date(),
+      tokenCount: {
+        input: inputTokens,
+        output: 0,
+        total: inputTokens,
+      },
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsGenerating(true);
+
+    try {
+      const response = await fetch('/api/workflows/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: input.trim(),
+          conversationHistory: conversationHistory,
+          currentWorkflow: currentWorkflow,
+        }),
+      });
+
+      // Check if response is HTML (error page) instead of JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const htmlText = await response.text();
+        console.error('Received HTML instead of JSON:', htmlText.substring(0, 200));
+        throw new Error('Server returned an error page instead of JSON. Please check the API endpoint.');
+      }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Failed to parse response as JSON:', jsonError);
+        const responseText = await response.text();
+        console.error('Response content:', responseText.substring(0, 500));
+        throw new Error('Invalid JSON response from server. Please try again.');
+      }
+
+      if (!response.ok) {
+        // Handle different error types
+        if (data.error === 'Claude declined to generate workflow') {
+          const errorMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: `I understand you're looking for help with a workflow, but I can't assist with that particular request. ${data.suggestion || 'Please try rephrasing your request with more specific, legitimate use cases.'}`,
+            timestamp: new Date(),
+            error: data.details,
+          };
+          setMessages(prev => [...prev, errorMessage]);
+          return;
+        }
+        
+        // Show more detailed error information
+        const errorDetails = data.details || data.validationErrors || data.error;
+        const errorMessage = `Failed to generate workflow: ${errorDetails}`;
+        console.error('Workflow generation error:', data);
+        throw new Error(errorMessage);
+      }
+
+      const responseContent = data.workflow ? 'I\'ve generated a workflow for you! You can preview, apply, or download it.' : 'I couldn\'t generate a workflow from your request. Please try rephrasing your request.';
+      const outputTokens = estimateTokenCount(responseContent);
+      const totalTokens = inputTokens + outputTokens;
+
+      const assistantMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: responseContent,
+        timestamp: new Date(),
+        workflow: data.workflow,
+        thinking: data.thinking,
+        tokenCount: {
+          input: inputTokens,
+          output: outputTokens,
+          total: totalTokens,
+        },
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+      setConversationHistory(prev => [...prev, userMessage, assistantMessage]);
+    } catch (error: any) {
+      console.error('Workflow generation error:', error);
+      
+      // Provide more specific error messages based on error type
+      let errorContent = 'Sorry, I encountered an error while generating your workflow. Please try again.';
+      
+      if (error.message.includes('Server returned an error page')) {
+        errorContent = 'The server is experiencing issues. Please check if the API endpoint is running correctly.';
+      } else if (error.message.includes('Invalid JSON response')) {
+        errorContent = 'The server returned an invalid response. Please try again in a moment.';
+      } else if (error.message.includes('Failed to generate workflow')) {
+        errorContent = 'Failed to generate workflow. Please check your request and try again.';
+      } else if (error.message.includes('API key')) {
+        errorContent = 'API key issue detected. Please check your configuration.';
+      }
+      
+      const errorTokens = estimateTokenCount(errorContent);
+      const totalErrorTokens = inputTokens + errorTokens;
+
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: errorContent,
+        timestamp: new Date(),
+        error: error.message,
+        tokenCount: {
+          input: inputTokens,
+          output: errorTokens,
+          total: totalErrorTokens,
+        },
+      };
+
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setInput(suggestion);
+    // Focus the input field after setting the suggestion
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleApplyWorkflow = (workflow: Workflow) => {
+    onApplyWorkflow(workflow);
+    onClose();
+    toast.success('Workflow applied successfully!');
+  };
+
+  const handlePreviewWorkflow = (workflow: Workflow) => {
+    // TODO: Implement workflow preview modal
+    console.log('Preview workflow:', workflow);
+    toast.info('Workflow preview coming soon!');
+  };
+
+  const handleDownloadWorkflow = (workflow: Workflow) => {
+    const dataStr = JSON.stringify(workflow, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${workflow.name.replace(/\s+/g, '-').toLowerCase()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success('Workflow downloaded!');
+  };
+
+  const handleClickOutside = (event: React.MouseEvent) => {
+    // Only close if clicking on the backdrop (not the panel content)
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
+  const clearConversation = () => {
+    setMessages([]);
+    setConversationHistory([]);
+    toast.info('Conversation cleared');
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 bg-black-alpha-20"
+            onClick={handleClickOutside}
+          />
+          
+          {/* Chat Panel */}
+          <motion.div
+            initial={{ x: '100%', y: '100%' }}
+            animate={{ x: 0, y: 0 }}
+            exit={{ x: '100%', y: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="w-[480px] h-[80vh] bg-background-base border-l border-border-faint shadow-2xl flex flex-col absolute bottom-0 right-0 ai-chat-interface"
+            dir="ltr"
+            style={{ direction: 'ltr', textAlign: 'left' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-16 py-12 border-b border-border-faint bg-accent-white">
+              <div className="flex items-center gap-12">
+                <div className="w-6 h-6 rounded-full bg-heat-100 flex items-center justify-center group">
+                  <Sparkles className="w-3 h-3 text-white group-hover:scale-110 transition-transform" />
+                </div>
+                <h2 className="text-sm font-semibold text-accent-black">AI Workflow Generator</h2>
+              </div>
+              <div className="flex items-center gap-12">
+                <button
+                  onClick={clearConversation}
+                  className="p-12 hover:bg-heat-4 hover:bg-opacity-10 rounded-12 transition-colors group"
+                  title="Clear conversation"
+                >
+                  <Trash2 className="w-3 h-3 text-black-alpha-48 group-hover:text-heat-100" />
+                </button>
+                <button
+                  onClick={onClose}
+                  className="p-12 hover:bg-heat-4 hover:bg-opacity-10 rounded-12 transition-colors group"
+                  title="Close AI Generator"
+                >
+                  <X className="w-3 h-3 text-black-alpha-48 group-hover:text-heat-100" />
+                </button>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-16 space-y-16" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
+              {messages.length === 0 && (
+                <div className="text-center py-24 px-16">
+                  <div className="w-16 h-16 mx-auto mb-24 rounded-full bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                    <MessageSquare className="w-8 h-8 text-heat-100" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-accent-black mb-12">
+                    {currentWorkflow ? 'Enhance your workflow' : 'Describe your workflow'}
+                  </h3>
+                  <p className="text-sm text-black-alpha-48 mb-24 max-w-sm mx-auto">
+                    {currentWorkflow 
+                      ? `I can see your current workflow "${currentWorkflow.name || 'Untitled'}" with ${currentWorkflow.nodes.length} nodes. Tell me what you'd like to add or modify.`
+                      : "Tell me what you want your workflow to do and I'll create it for you"
+                    }
+                  </p>
+                  <div className="space-y-12">
+                    <p className="font-medium text-sm text-black-alpha-60">
+                      {currentWorkflow ? 'Try these enhancements:' : 'Try these examples:'}
+                    </p>
+                    <div className="grid gap-12 max-w-md mx-auto">
+                      {currentWorkflow ? (
+                        <>
+                          <button
+                            onClick={() => handleSuggestionClick("Add error handling and validation to this workflow")}
+                            className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                            <div className="flex items-center gap-12 relative">
+                              <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                                <CheckCircle className="w-4 h-4 text-heat-100" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-sm text-accent-black font-medium block">
+                                  Add error handling and validation
+                                </span>
+                                <p className="text-xs text-black-alpha-48 mt-4">
+                                  Make the workflow more robust with error handling
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                          
+                          <button
+                            onClick={() => handleSuggestionClick("Add a data processing step to this workflow")}
+                            className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                            <div className="flex items-center gap-12 relative">
+                              <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                                <Braces className="w-4 h-4 text-heat-100" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-sm text-accent-black font-medium block">
+                                  Add data processing step
+                                </span>
+                                <p className="text-xs text-black-alpha-48 mt-4">
+                                  Transform and process data between steps
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                          
+                          <button
+                            onClick={() => handleSuggestionClick("Add a reporting and analysis step to this workflow")}
+                            className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                            <div className="flex items-center gap-12 relative">
+                              <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                                <BarChart3 className="w-4 h-4 text-heat-100" />
+                              </div>
+                              <div className="flex-1">
+                                <span className="text-sm text-accent-black font-medium block">
+                                  Add reporting and analysis
+                                </span>
+                                <p className="text-xs text-black-alpha-48 mt-4">
+                                  Generate insights and reports from the workflow
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleSuggestionClick("Scrape a website and summarize the content")}
+                          className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                          <div className="flex items-center gap-12 relative">
+                            <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                              <Globe className="w-4 h-4 text-heat-100" />
+                            </div>
+                            <div className="flex-1">
+                              <span className="text-sm text-accent-black font-medium block">
+                                Scrape a website and summarize the content
+                              </span>
+                              <p className="text-xs text-black-alpha-48 mt-4">
+                                Extract and analyze web content automatically
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      )}
+                      
+                      <button
+                        onClick={() => handleSuggestionClick("Research multiple companies and create a report")}
+                        className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                        <div className="flex items-center gap-12 relative">
+                          <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                            <BarChart3 className="w-4 h-4 text-heat-100" />
+                          </div>
+                          <div className="flex-1">
+                            <span className="text-sm text-accent-black font-medium block">
+                              Research multiple companies and create a report
+                            </span>
+                            <p className="text-xs text-black-alpha-48 mt-4">
+                              Gather data from multiple sources and generate insights
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                      
+                      <button
+                        onClick={() => handleSuggestionClick("Monitor prices across different sites")}
+                        className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                        <div className="flex items-center gap-12 relative">
+                          <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                            <ShoppingCart className="w-4 h-4 text-heat-100" />
+                          </div>
+                          <div className="flex-1">
+                            <span className="text-sm text-accent-black font-medium block">
+                              Monitor prices across different sites
+                            </span>
+                            <p className="text-xs text-black-alpha-48 mt-4">
+                              Track and compare prices from various e-commerce sites
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                      
+                      <button
+                        onClick={() => handleSuggestionClick("Create a social media content calendar")}
+                        className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                        <div className="flex items-center gap-12 relative">
+                          <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                            <Calendar className="w-4 h-4 text-heat-100" />
+                          </div>
+                          <div className="flex-1">
+                            <span className="text-sm text-accent-black font-medium block">
+                              Create a social media content calendar
+                            </span>
+                            <p className="text-xs text-black-alpha-48 mt-4">
+                              Generate and schedule social media posts automatically
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                      
+                      <button
+                        onClick={() => handleSuggestionClick("Analyze customer feedback and sentiment")}
+                        className="group p-16 text-left bg-accent-white border border-border-faint rounded-12 hover:border-heat-100 hover:shadow-sm transition-all duration-200 relative overflow-hidden"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                        <div className="flex items-center gap-12 relative">
+                          <div className="w-8 h-8 rounded-12 bg-heat-4 bg-opacity-10 flex items-center justify-center">
+                            <Heart className="w-4 h-4 text-heat-100" />
+                          </div>
+                          <div className="flex-1">
+                            <span className="text-sm text-accent-black font-medium block">
+                              Analyze customer feedback and sentiment
+                            </span>
+                            <p className="text-xs text-black-alpha-48 mt-4">
+                              Process reviews and feedback to extract insights
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex gap-12 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                >
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    message.role === 'user' 
+                      ? 'bg-heat-100 text-white' 
+                      : 'bg-heat-4 bg-opacity-10 text-heat-100'
+                  }`}>
+                    {message.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
+                  </div>
+                  
+                  <div className={`flex-1 max-w-[85%] ${message.role === 'user' ? 'text-right' : ''}`} dir="ltr" style={{ direction: 'ltr' }}>
+                    <div className={`inline-block p-16 rounded-12 ${
+                      message.role === 'user'
+                        ? 'bg-heat-100 text-white'
+                        : 'bg-background-lighter border border-border-faint text-accent-black'
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap leading-relaxed" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>{message.content}</p>
+                      
+                      {message.error && (
+                        <div className="mt-12 p-12 bg-accent-crimson bg-opacity-10 border border-accent-crimson border-opacity-20 rounded-12 text-accent-crimson text-xs">
+                          <div className="flex items-center gap-8 mb-8">
+                            <AlertCircle className="w-3 h-3" />
+                            <span className="font-medium">Error</span>
+                          </div>
+                          <p className="text-xs" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>{message.error}</p>
+                        </div>
+                      )}
+                      
+                      {message.thinking && (
+                        <div className="mt-12 p-12 bg-heat-4 bg-opacity-10 border border-heat-100 border-opacity-20 rounded-12 text-heat-100 text-xs">
+                          <div className="flex items-center gap-8 mb-8">
+                            <Bot className="w-3 h-3" />
+                            <span className="font-medium">Claude's Thinking</span>
+                          </div>
+                          <p className="text-xs whitespace-pre-wrap leading-relaxed" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>{message.thinking}</p>
+                        </div>
+                      )}
+                      
+                      {message.workflow && (
+                        <div className="mt-16 p-16 bg-heat-4 bg-opacity-10 border border-heat-100 border-opacity-20 rounded-12 relative overflow-hidden">
+                          <div className="absolute inset-0 bg-gradient-to-br from-heat-4 to-transparent opacity-5"></div>
+                          <div className="flex items-center gap-12 mb-12 relative">
+                            <div className="w-6 h-6 rounded-full bg-heat-100 flex items-center justify-center">
+                              <CheckCircle className="w-3 h-3 text-white" />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold text-accent-black">
+                                {message.workflow.name}
+                              </h4>
+                              <p className="text-xs text-black-alpha-48">
+                                {message.workflow.description || 'No description provided'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-8 relative">
+                            <button
+                              onClick={() => handleApplyWorkflow(message.workflow!)}
+                              className="flex items-center gap-6 px-10 py-6 bg-accent-forest hover:bg-accent-forest hover:bg-opacity-90 text-white text-xs font-medium rounded-12 transition-all duration-200 hover:scale-105"
+                            >
+                              <CheckCircle className="w-3 h-3" />
+                              Apply
+                            </button>
+                            <button
+                              onClick={() => handlePreviewWorkflow(message.workflow!)}
+                              className="flex items-center gap-6 px-10 py-6 bg-heat-100 hover:bg-heat-100 hover:bg-opacity-90 text-white text-xs font-medium rounded-12 transition-all duration-200 hover:scale-105"
+                            >
+                              <Eye className="w-3 h-3" />
+                              Preview
+                            </button>
+                            <button
+                              onClick={() => handleDownloadWorkflow(message.workflow!)}
+                              className="flex items-center gap-6 px-10 py-6 bg-black-alpha-48 hover:bg-black-alpha-64 text-white text-xs font-medium rounded-12 transition-all duration-200 hover:scale-105"
+                            >
+                              <Download className="w-3 h-3" />
+                              Download
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className={`flex items-center gap-2 text-xs text-black-alpha-40 mt-2 ${message.role === 'user' ? 'text-right justify-end' : ''}`}>
+                      <span>{message.timestamp.toLocaleTimeString()}</span>
+                      {message.tokenCount && (
+                        <span className="px-1.5 py-0.5 bg-black-alpha-10 rounded-4 text-xs font-mono">
+                          {message.tokenCount.total} tokens
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {isGenerating && (
+                <div className="flex gap-12">
+                  <div className="w-6 h-6 rounded-full bg-heat-4 bg-opacity-10 flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-3 h-3 text-heat-100" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="inline-block p-16 bg-background-lighter border border-border-faint rounded-12">
+                      <div className="flex items-center gap-8">
+                        <Loader2 className="w-3 h-3 animate-spin text-heat-100" />
+                        <span className="text-sm text-accent-black font-medium">
+                          Claude is designing your workflow...
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="p-16 border-t border-border-faint bg-accent-white" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
+              <div className="relative bg-background-base border border-border-faint rounded-12 shadow-sm">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Start building..."
+                  className="w-full p-16 border-0 rounded-12 resize-none focus:ring-0 focus:outline-none bg-transparent text-accent-black placeholder-black-alpha-40 transition-all duration-200 text-sm leading-relaxed min-h-[60px] max-h-[120px]"
+                  dir="ltr"
+                  rows={2}
+                  disabled={isGenerating}
+                  style={{ 
+                    direction: 'ltr',
+                    textAlign: 'left',
+                    paddingRight: '60px',
+                    fontFamily: 'inherit'
+                  }}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!input.trim() || isGenerating}
+                  className="absolute right-8 top-1/2 transform -translate-y-1/2 w-10 h-10 bg-heat-100 hover:bg-heat-100 hover:bg-opacity-90 disabled:bg-black-alpha-20 disabled:cursor-not-allowed text-white rounded-12 transition-all duration-200 hover:scale-105 disabled:hover:scale-100 flex items-center justify-center shadow-sm"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+              
+              {messages.length > 0 && (
+                <div className="mt-12 flex justify-between items-center">
+                  <div className="flex items-center gap-12">
+                    <span className="text-xs text-black-alpha-40">
+                      {messages.length} message{messages.length !== 1 ? 's' : ''}
+                    </span>
+                    {(() => {
+                      const totalTokens = messages.reduce((sum, msg) => sum + (msg.tokenCount?.total || 0), 0);
+                      const inputTokens = messages.reduce((sum, msg) => sum + (msg.tokenCount?.input || 0), 0);
+                      const outputTokens = messages.reduce((sum, msg) => sum + (msg.tokenCount?.output || 0), 0);
+                      
+                      return totalTokens > 0 ? (
+                        <div className="flex items-center gap-8 text-xs text-black-alpha-40">
+                          <span className="px-6 py-2 bg-black-alpha-10 rounded-12 font-mono">
+                            {totalTokens} total
+                          </span>
+                          <span className="px-6 py-2 bg-heat-4 bg-opacity-10 rounded-12 font-mono text-heat-100">
+                            {inputTokens} in
+                          </span>
+                          <span className="px-6 py-2 bg-accent-forest bg-opacity-10 rounded-12 font-mono text-accent-forest">
+                            {outputTokens} out
+                          </span>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                  <button
+                    onClick={onClose}
+                    className="text-xs text-black-alpha-48 hover:text-black-alpha-72 px-8 py-4 rounded-12 hover:bg-heat-4 hover:bg-opacity-10 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}

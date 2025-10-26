@@ -2,6 +2,17 @@
 @import "additional-styles/utility-patterns.css";
 @import "additional-styles/theme.css";
 
+/* AI Chat Interface - Ensure LTR text direction */
+.ai-chat-interface {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+.ai-chat-interface * {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -161,7 +172,7 @@
 }
 
 .FireButton:hover {
-  box-shadow: 0 0 8px 2px #ff5d22af;
+  box-shadow: 0 0 8px 2px #49FF16af;
 }
 
 @keyframes overlayShow {

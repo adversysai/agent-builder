@@ -47,7 +47,7 @@ export default function EndpointsCrawl({
     const scaler = size / 20;
 
     const render = () => {
-      ctx.fillStyle = "#FF4C00";
+      ctx.fillStyle = "#49FF16";
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       for (const group of grid.slice(0, 4)) {

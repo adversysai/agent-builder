@@ -4,6 +4,7 @@ import { substituteVariables } from '../variable-substitution';
 import FirecrawlApp from '@mendable/firecrawl-js';
 import { getServerAPIKeys } from '@/lib/api/config';
 import { resolveMCPServer } from '@/lib/mcp/resolver';
+import { executeTavilyMCPNode } from './tavily-mcp';
 
 /**
  * Extract specific field from Firecrawl response
@@ -125,7 +126,7 @@ async function executeGenericMCPServer(serverConfig: any, state: WorkflowState):
 export async function executeMCPNode(
   node: WorkflowNode,
   state: WorkflowState,
-  apiKey?: string
+  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string }
 ): Promise<any> {
   const { data } = node;
 
@@ -149,7 +150,12 @@ export async function executeMCPNode(
     }
   }
 
+  console.log('🔍 MCP Node Debug - mcpServers:', mcpServers);
+  console.log('🔍 MCP Node Debug - nodeData:', nodeData);
+  console.log('🔍 MCP Node Debug - apiKeys:', apiKeys);
+
   if (!mcpServers || mcpServers.length === 0) {
+    console.log('❌ No MCP servers configured or could not resolve server');
     return {
       error: 'No MCP servers configured or could not resolve server',
     };
@@ -158,13 +164,54 @@ export async function executeMCPNode(
   const results: any[] = [];
 
   for (const serverConfig of mcpServers) {
-    // For all servers (including Firecrawl), use API routes
-    if (serverConfig.name.toLowerCase().includes('firecrawl')) {
+    console.log('🔍 Processing MCP server:', { 
+      name: serverConfig.name, 
+      url: serverConfig.url,
+      authType: serverConfig.authType,
+      label: serverConfig.label
+    });
+    
+    // Handle Tavily MCP server - more robust detection
+    const isTavily = serverConfig.name.toLowerCase().includes('tavily') || 
+                    serverConfig.url?.includes('tavily') ||
+                    serverConfig.url?.includes('mcp.tavily.com') ||
+                    serverConfig.label?.toLowerCase().includes('tavily');
+    
+    console.log('🔍 Tavily detection:', { isTavily, name: serverConfig.name, url: serverConfig.url });
+    
+    if (isTavily) {
+      console.log('🔍 MCP executor running Tavily on server side');
+      
+      if (!apiKeys?.tavily) {
+        console.log('❌ TAVILY_API_KEY not configured');
+        throw new Error('TAVILY_API_KEY not configured. Add it to your .env.local file:\nTAVILY_API_KEY=your_key_here');
+      }
+
+      console.log('✅ TAVILY_API_KEY found, proceeding with execution');
+      try {
+        const result = await executeTavilyMCPNode(node, state, apiKeys.tavily);
+        console.log('✅ Tavily MCP execution completed successfully');
+        results.push({
+          server: 'Tavily',
+          tool: nodeData.mcpAction || 'search',
+          success: true,
+          data: result.output,
+        });
+        state.variables.lastOutput = result.output;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('❌ Tavily execution error:', error);
+        results.push({
+          server: 'Tavily',
+          error: errorMessage,
+          success: false,
+        });
+      }
+    } else if (serverConfig.name.toLowerCase().includes('firecrawl')) {
       // Server-side Firecrawl execution - use Firecrawl SDK directly
       console.log('🖥️ MCP executor running Firecrawl on server side');
 
-      const apiKeys = getServerAPIKeys();
-      if (!apiKeys.firecrawl) {
+      if (!apiKeys?.firecrawl) {
         throw new Error('FIRECRAWL_API_KEY not configured. Add it to your .env.local file:\nFIRECRAWL_API_KEY=your_key_here');
       }
 
@@ -280,6 +327,7 @@ export async function executeMCPNode(
       }
     } else {
       // Generic MCP server support (DeepWiki, etc.)
+      console.log('🔍 Unknown MCP server, trying generic handler:', serverConfig.name);
       try {
         const result = await executeGenericMCPServer(serverConfig, state);
         results.push({

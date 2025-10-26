@@ -105,6 +105,7 @@ export interface WorkflowEdge {
   source: string;
   target: string;
   type?: string;
+  animated?: boolean;
   label?: string; // For conditional edges like "true"/"false"
   sourceHandle?: string; // For conditional edges like "if"/"else"
 }

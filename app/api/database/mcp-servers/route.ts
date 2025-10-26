@@ -30,22 +30,31 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action, userId, name, description, url } = body;
     
-    if (!userId) {
+    // For seed and cleanup actions, we need to get userId from the request
+    let targetUserId = userId;
+    
+    if (!targetUserId) {
+      // Try to get userId from query params as fallback
+      const { searchParams } = new URL(request.url);
+      targetUserId = searchParams.get('userId');
+    }
+    
+    if (!targetUserId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
     
     if (action === 'seed') {
-      const servers = await seedOfficialMCPs(userId);
+      const servers = await seedOfficialMCPs(targetUserId);
       return NextResponse.json(servers);
     } else if (action === 'add') {
       if (!name || !url) {
         return NextResponse.json({ error: 'Name and URL are required' }, { status: 400 });
       }
       
-      const server = await addMCPServer(userId, name, description || '', url);
+      const server = await addMCPServer(targetUserId, name, description || '', url);
       return NextResponse.json(server);
     } else if (action === 'cleanup') {
-      await cleanupOfficialMCPs(userId);
+      await cleanupOfficialMCPs(targetUserId);
       return NextResponse.json({ success: true });
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

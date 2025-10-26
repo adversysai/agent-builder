@@ -154,6 +154,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   return (
     <AnimatePresence>
       <motion.div
+        key="settings-panel"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -431,36 +432,38 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
                   {/* MCP Cards */}
                   <div className="space-y-8">
-                    {mcpServers?.map((server) => (
+                    {mcpServers?.map((server, index) => (
                       <MCPCard
-                        key={server.id}
+                        key={server._id || server.id || `mcp-server-${index}`}
                         server={server}
-                        isExpanded={expandedMCPs.has(server.id)}
-                        isTesting={testingMCPs.has(server.id)}
+                        isExpanded={expandedMCPs.has(server._id || server.id)}
+                        isTesting={testingMCPs.has(server._id || server.id)}
                         onExpandToggle={() => {
+                          const serverId = server._id || server.id;
                           const newExpanded = new Set(expandedMCPs);
-                          if (newExpanded.has(server.id)) {
-                            newExpanded.delete(server.id);
+                          if (newExpanded.has(serverId)) {
+                            newExpanded.delete(serverId);
                           } else {
-                            newExpanded.add(server.id);
+                            newExpanded.add(serverId);
                           }
                           setExpandedMCPs(newExpanded);
                         }}
                         onToggle={async () => {
-                          await toggleMCPEnabled({ id: server.id });
+                          await toggleMCPEnabled({ id: server._id || server.id });
                           toast.success(`${server.name} ${server.enabled ? 'disabled' : 'enabled'}`);
                         }}
                         onTest={async () => {
-                          setTestingMCPs(prev => new Set(Array.from(prev).concat(server.id)));
+                          const serverId = server._id || server.id;
+                          setTestingMCPs(prev => new Set(Array.from(prev).concat(serverId)));
                           try {
                             // Actually test the connection and discover tools
                             const response = await fetch('/api/test-mcp-connection', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({
-                                serverUrl: server.url,
-                                apiKey: server.accessToken,
-                                serverType: server.url.includes('firecrawl') ? 'firecrawl' : 'generic',
+                                url: server.url,
+                                authToken: server.accessToken,
+                                headers: {}
                               }),
                             });
 
@@ -469,16 +472,18 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             if (result.success) {
                               // Update with real discovered tools
                               await updateConnectionStatus({
-                                id: server.id,
+                                id: server._id || server.id,
                                 status: "connected",
-                                tools: result.tools || []
+                                tools: result.tools || [],
+                                userId: user?.id || ''
                               });
                               toast.success(`Connected to ${server.name} - ${result.tools?.length || 0} tools discovered`);
                             } else {
                               await updateConnectionStatus({
-                                id: server.id,
+                                id: server._id || server.id,
                                 status: "error",
-                                error: result.error || "Connection failed"
+                                error: result.error || "Connection failed",
+                                userId: user?.id || ''
                               });
                               toast.error(`Failed to connect to ${server.name}`, {
                                 description: result.error || result.details,
@@ -486,15 +491,16 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             }
                           } catch (error) {
                             await updateConnectionStatus({
-                              id: server._id,
+                              id: server._id || server.id,
                               status: "error",
-                              error: error instanceof Error ? error.message : "Connection failed"
+                              error: error instanceof Error ? error.message : "Connection failed",
+                              userId: user?.id || ''
                             });
                             toast.error(`Failed to connect to ${server.name}`);
                           } finally {
                             setTestingMCPs(prev => {
                               const newSet = new Set(prev);
-                              newSet.delete(server.id);
+                              newSet.delete(server._id || server.id);
                               return newSet;
                             });
                           }
@@ -505,7 +511,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         }}
                         onDelete={async () => {
                           if (confirm(`Delete ${server.name}?`)) {
-                            await deleteMCPServer({ id: server.id });
+                            await deleteMCPServer({ id: server._id || server.id });
                             toast.success(`${server.name} deleted`);
                           }
                         }}
@@ -573,8 +579,14 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             try {
               if (editingMCP) {
                 // Update existing server
+                const serverId = editingMCP._id || (editingMCP as any).id;
+                console.log('🔧 Updating MCP Server:', { editingMCP, serverId, data });
+                if (!serverId) {
+                  toast.error('Server ID not found');
+                  return;
+                }
                 await updateMCPServer({
-                  id: editingMCP._id,
+                  id: serverId,
                   ...data
                 });
                 toast.success(`${data.name} updated`);
@@ -707,7 +719,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     body: JSON.stringify({
                       serverUrl: server.url,
                       apiKey: server.accessToken,
-                      serverType: server.url.includes('firecrawl') ? 'firecrawl' : 'generic',
+                      serverType: (server.url || '').includes('firecrawl') ? 'firecrawl' : 'generic',
                     }),
                   });
 
@@ -718,14 +730,16 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     await updateConnectionStatus({
                       id: server._id,
                       status: "connected",
-                      tools: testResult.tools || []
+                      tools: testResult.tools || [],
+                      userId: user.id
                     });
                     toast.success(`✅ ${server.name}: ${testResult.tools?.length || 0} tools discovered`);
                   } else {
                     await updateConnectionStatus({
                       id: server._id,
                       status: "error",
-                      error: testResult.error || "Connection failed"
+                      error: testResult.error || "Connection failed",
+                      userId: user.id
                     });
                     toast.error(`❌ ${server.name}: ${testResult.error || 'Connection failed'}`);
                   }
@@ -733,7 +747,8 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   await updateConnectionStatus({
                     id: server._id,
                     status: "error",
-                    error: error instanceof Error ? error.message : "Test failed"
+                    error: error instanceof Error ? error.message : "Test failed",
+                    userId: user.id
                   });
                   toast.error(`❌ ${server.name}: Test failed`);
                 }
@@ -868,7 +883,7 @@ function MCPCard({
                 <p className="text-xs text-black-alpha-48 mb-4">Authentication</p>
                 <div className="flex items-center gap-4">
                   <span className="text-xs text-accent-black capitalize">
-                    {server.authType === 'oauth-coming-soon' ? 'OAuth (Coming Soon)' : server.authType.replace('-', ' ')}
+                    {server.authType === 'oauth-coming-soon' ? 'OAuth (Coming Soon)' : (server.authType || 'none').replace('-', ' ')}
                   </span>
                   {server.accessToken && <span className="text-xs text-black-alpha-32">•••••••</span>}
                 </div>
@@ -1082,9 +1097,9 @@ function AddMCPModal({ isOpen, onClose, onSave, editingServer }: AddMCPModalProp
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      serverUrl: formData.url,
-                      apiKey: formData.accessToken,
-                      serverType: formData.url.includes('firecrawl') ? 'firecrawl' : 'generic',
+                      url: formData.url,
+                      authToken: formData.accessToken,
+                      headers: {}
                     }),
                   });
 

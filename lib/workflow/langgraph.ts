@@ -1,5 +1,5 @@
 /**
- * LangGraph Integration for Open Agent Builder
+ * LangGraph Integration for Dexflow
  *
  * This module provides LangGraph-powered workflow execution with:
  * - StateGraph-based orchestration
@@ -22,6 +22,7 @@ import { executeHTTPNode } from './executors/http';
 import { executeExtractNode } from './executors/extract';
 import { executeArcadeNode } from './executors/arcade';
 import { createOrUpdateArcadeAuthRecord } from '../arcade/auth-store';
+import { substituteVariables } from './variable-substitution';
 
 interface ArcadePendingResponse {
   __arcadePendingAuth: true;
@@ -85,7 +86,7 @@ export const WorkflowStateAnnotation = Annotation.Root({
 
 /**
  * LangGraph Workflow Executor
- * Converts Open Agent Builder workflows to LangGraph StateGraph
+ * Converts Dexflow workflows to LangGraph StateGraph
  */
 export class LangGraphExecutor {
   private workflow: Workflow;
@@ -416,7 +417,16 @@ export class LangGraphExecutor {
         result.toolCalls = toolCalls;
         result.status = 'completed';
         result.completedAt = new Date().toISOString();
-        this.onNodeUpdate?.(node.id, result);
+        
+        // Only send update if we have a valid callback and the result is meaningful
+        if (this.onNodeUpdate && result.status === 'completed') {
+          try {
+            this.onNodeUpdate(node.id, result);
+          } catch (error) {
+            console.error('Failed to send node update:', error);
+            // Don't throw here to prevent workflow failure
+          }
+        }
 
         // For while loops, extract the iteration counter from output
         // Merge with any agent-provided variable updates
@@ -528,7 +538,32 @@ export class LangGraphExecutor {
           const firecrawl = new FirecrawlApp({ apiKey: this.apiKeys?.firecrawl });
 
           if (action === 'scrape') {
-            const url = data.scrapeUrl || state.variables.lastOutput || state.variables.input;
+            // Apply variable substitution to mcpParams if they exist
+            let mcpParams = data.mcpParams;
+            if (mcpParams && typeof mcpParams === 'object') {
+              mcpParams = JSON.parse(JSON.stringify(mcpParams)); // Deep clone
+              for (const [key, value] of Object.entries(mcpParams)) {
+                if (typeof value === 'string') {
+                  mcpParams[key] = substituteVariables(value, state);
+                }
+              }
+            }
+            
+            // Get URL from various possible sources
+            let url = data.scrapeUrl || mcpParams?.url || state.variables.lastOutput || state.variables.input;
+            
+            // Ensure url is a string and not empty
+            if (!url || typeof url !== 'string') {
+              throw new Error(`Invalid URL for scraping: ${url}. Expected a string URL.`);
+            }
+            
+            // Trim and validate URL
+            url = url.trim();
+            if (!url) {
+              throw new Error('URL is empty after trimming');
+            }
+            
+            console.log(`Scraping URL: ${url}`);
             const result = await firecrawl.scrape(url, { formats: ['markdown'] });
             return result.markdown || result;
           }
@@ -537,6 +572,60 @@ export class LangGraphExecutor {
             const query = data.searchQuery || state.variables.lastOutput;
             const result = await firecrawl.search(query, { limit: 5 });
             return result;
+          }
+        }
+
+        // Handle Tavily MCP server
+        if (server.name.toLowerCase().includes('tavily')) {
+          console.log('🔍 executeNodePure: Handling Tavily MCP server');
+          
+          // Type assertion to fix TypeScript error
+          const apiKeys = this.apiKeys as any;
+          if (!apiKeys?.tavily) {
+            throw new Error('TAVILY_API_KEY not configured. Add it to your .env.local file:\nTAVILY_API_KEY=your_key_here');
+          }
+
+          // Apply variable substitution to mcpParams
+          let mcpParams = data.mcpParams || {};
+          if (typeof mcpParams === 'object') {
+            mcpParams = JSON.parse(JSON.stringify(mcpParams)); // Deep clone
+            for (const [key, value] of Object.entries(mcpParams)) {
+              if (typeof value === 'string') {
+                mcpParams[key] = substituteVariables(value, state);
+              }
+            }
+          }
+
+          console.log('🔍 executeNodePure: Tavily search params:', mcpParams);
+
+          try {
+            const response = await fetch('https://api.tavily.com/search', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKeys.tavily}`
+              },
+              body: JSON.stringify({
+                query: mcpParams.query || 'default search',
+                search_depth: 'basic',
+                include_answer: true,
+                include_images: false,
+                include_raw_content: false,
+                max_results: mcpParams.max_results || 5
+              })
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Tavily search failed: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const result = await response.json();
+            console.log('✅ executeNodePure: Tavily search completed successfully');
+            return result;
+          } catch (error) {
+            console.error('❌ executeNodePure: Tavily search failed:', error);
+            throw error;
           }
         }
 
@@ -553,9 +642,51 @@ export class LangGraphExecutor {
       }
 
       case 'http': {
-        const url = data.httpUrl || '';
-        const method = data.httpMethod || 'GET';
-        const response = await fetch(url, { method });
+        // Apply variable substitution to URL and other HTTP parameters
+        let url = data.httpUrl || '';
+        let method = data.httpMethod || 'GET';
+        let headers = data.httpHeaders || [];
+        let body = data.httpBody || '';
+
+        // Substitute variables in URL
+        url = substituteVariables(url, state);
+        
+        // Substitute variables in headers
+        if (Array.isArray(headers)) {
+          headers = headers.map(header => ({
+            ...header,
+            value: substituteVariables(header.value, state)
+          }));
+        }
+        
+        // Substitute variables in body
+        body = substituteVariables(body, state);
+
+        // Validate URL after substitution
+        if (!url || url.includes('{{') || url.includes('}}')) {
+          throw new Error(`Invalid or unresolved URL: ${url}. Please ensure all variables are properly substituted.`);
+        }
+
+        console.log(`Making HTTP ${method} request to: ${url}`);
+        
+        const fetchOptions: RequestInit = {
+          method,
+          headers: headers.reduce((acc, header) => {
+            acc[header.key] = header.value;
+            return acc;
+          }, {} as Record<string, string>)
+        };
+
+        if (body && method !== 'GET') {
+          fetchOptions.body = body;
+        }
+
+        const response = await fetch(url, fetchOptions);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         return await response.json();
       }
 
@@ -1007,6 +1138,7 @@ export class LangGraphExecutor {
    */
   private async executeNode(node: WorkflowNode, state: WorkflowState): Promise<any> {
     const nodeType = (node.data as any).nodeType || node.type;
+    console.log('🔍 LangGraph: Executing node:', node.id, 'type:', nodeType, 'data:', node.data);
 
     switch (nodeType) {
       case 'start':
@@ -1027,7 +1159,9 @@ export class LangGraphExecutor {
         return await executeArcadeNode(node, state, this.apiKeys?.arcade);
 
       case 'mcp':
-        return await executeMCPNode(node, state, this.apiKeys?.firecrawl);
+        console.log('🔍 LangGraph: Executing MCP node:', node.id, node.data);
+        console.log('🔍 LangGraph: API Keys:', this.apiKeys);
+        return await executeMCPNode(node, state, this.apiKeys);
 
       case 'if-else':
       case 'if / else':

@@ -36,6 +36,7 @@ export async function POST(
       openai: process.env.OPENAI_API_KEY,
       firecrawl: process.env.FIRECRAWL_API_KEY,
       arcade: process.env.ARCADE_API_KEY,
+      tavily: process.env.TAVILY_API_KEY,
     };
 
     // Execute workflow using LangGraph

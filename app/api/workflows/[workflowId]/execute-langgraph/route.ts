@@ -47,6 +47,7 @@ export async function POST(
       openai: (userId ? await getLLMApiKey('openai', userId) : undefined) || process.env.OPENAI_API_KEY,
       firecrawl: process.env.FIRECRAWL_API_KEY, // Firecrawl keys are still environment-only for now
       arcade: process.env.ARCADE_API_KEY,
+      tavily: process.env.TAVILY_API_KEY, // Tavily keys are environment-only for now
     };
 
     // Create LangGraph executor

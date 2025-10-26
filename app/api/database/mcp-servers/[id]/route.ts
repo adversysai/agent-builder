@@ -69,7 +69,12 @@ export async function PATCH(
     if (action === 'toggle') {
       server = await toggleMCPEnabled(id, userId, enabled);
     } else if (action === 'connection') {
-      server = await updateConnectionStatus(id, userId, status);
+      const { tools, error } = body;
+      server = await updateConnectionStatus(id, userId, {
+        status,
+        tools,
+        error
+      });
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }

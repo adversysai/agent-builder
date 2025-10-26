@@ -58,7 +58,7 @@ const Button = forwardRef<HTMLButtonElement, Props>(
           size === "default" && "rounded-8 px-10 py-6 gap-4",
           size === "large" && "rounded-10 px-12 py-8 gap-6",
 
-          // Primary variant (orange/heat)
+          // Primary variant (green/heat)
           variant === "primary" && [
             "text-accent-white",
             // Hover/active only when interactive

@@ -258,7 +258,7 @@ export default function HomeHeroTitle() {
   return (
     <div className="text-title-h1 mx-auto text-center [&_span]:text-heat-100 mb-12 lg:mb-16">
       Open <br className="lg-max:hidden" />
-      <span>Agent Builder</span>
+      <span>Dexflow</span>
     </div>
   );
 }

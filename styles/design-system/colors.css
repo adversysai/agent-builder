@@ -5,15 +5,18 @@
   --white: #ffffff;
   --black: #000000;
   
-  /* Fire-inspired heat colors */
-  --heat-4: rgba(250, 93, 25, 0.039);
-  --heat-8: rgba(250, 93, 25, 0.078);
-  --heat-12: rgba(250, 93, 25, 0.122);
-  --heat-16: rgba(250, 93, 25, 0.161);
-  --heat-20: rgba(250, 93, 25, 0.200);
-  --heat-40: rgba(250, 93, 25, 0.400);
-  --heat-100: #fa5d19;
-  --heat-200: #ff6600;
+  /* Dexflow green colors */
+  --heat-4: rgba(73, 255, 22, 0.039);
+  --heat-8: rgba(73, 255, 22, 0.078);
+  --heat-12: rgba(73, 255, 22, 0.122);
+  --heat-16: rgba(73, 255, 22, 0.161);
+  --heat-20: rgba(73, 255, 22, 0.200);
+  --heat-40: rgba(73, 255, 22, 0.400);
+  --heat-100: #49FF16;
+  --heat-200: #47FF15;
+  --heat-300: #42F414;
+  --heat-400: #4CFF17;
+  --heat-500: #40EB13;
   
   /* Accent colors */
   --accent-black: #262626;
@@ -74,15 +77,18 @@
     --white: color(display-p3 1 1 1);
     --black: color(display-p3 0 0 0);
     
-    /* Fire-inspired heat colors */
-    --heat-4: color(display-p3 0.980392 0.364706 0.098039 / 0.039216);
-    --heat-8: color(display-p3 0.980392 0.364706 0.098039 / 0.078431);
-    --heat-12: color(display-p3 0.980392 0.364706 0.098039 / 0.121569);
-    --heat-16: color(display-p3 0.980392 0.364706 0.098039 / 0.160784);
-    --heat-20: color(display-p3 0.980392 0.364706 0.098039 / 0.200000);
-    --heat-40: color(display-p3 0.980392 0.364706 0.098039 / 0.400000);
-    --heat-100: color(display-p3 0.980392 0.364706 0.098039 / 1.000000);
-    --heat-200: color(display-p3 1.000000 0.400000 0.000000 / 1.000000);
+        /* Dexflow green colors */
+        --heat-4: color(display-p3 0.286275 1.000000 0.086275 / 0.039216);
+        --heat-8: color(display-p3 0.286275 1.000000 0.086275 / 0.078431);
+        --heat-12: color(display-p3 0.286275 1.000000 0.086275 / 0.121569);
+        --heat-16: color(display-p3 0.286275 1.000000 0.086275 / 0.160784);
+        --heat-20: color(display-p3 0.286275 1.000000 0.086275 / 0.200000);
+        --heat-40: color(display-p3 0.286275 1.000000 0.086275 / 0.400000);
+        --heat-100: color(display-p3 0.286275 1.000000 0.086275 / 1.000000);
+        --heat-200: color(display-p3 0.278431 1.000000 0.082353 / 1.000000);
+        --heat-300: color(display-p3 0.258824 0.956863 0.078431 / 1.000000);
+        --heat-400: color(display-p3 0.298039 1.000000 0.090196 / 1.000000);
+        --heat-500: color(display-p3 0.250980 0.921569 0.074510 / 1.000000);
     
     /* Accent colors */
     --accent-black: color(display-p3 0.149020 0.149020 0.149020 / 1.000000);

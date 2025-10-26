@@ -7,7 +7,6 @@ import VariableReferencePicker from "./VariableReferencePicker";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 import { useEnabledMCPs } from "@/lib/hooks/useMCPServers";
-import FirecrawlLogo from "@/components/icons/FirecrawlLogo";
 
 // Type definitions
 type UserLLMKey = {

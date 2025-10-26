@@ -38,10 +38,59 @@ export async function executeExtractNode(
       fullPrompt = `${fullPrompt}\n\nData to extract from:\n${contextData.substring(0, 10000)}`;
     }
 
-    // Parse JSON schema
-    const schema = typeof data.jsonSchema === 'string'
+    // Parse JSON schema and ensure it has required properties for OpenAI
+    let schema = typeof data.jsonSchema === 'string'
       ? JSON.parse(data.jsonSchema)
       : data.jsonSchema;
+
+    // Recursively fix schema for OpenAI API requirements
+    const fixSchemaForOpenAI = (obj: any): any => {
+      if (typeof obj !== 'object' || obj === null) {
+        return obj;
+      }
+
+      if (Array.isArray(obj)) {
+        return obj.map(fixSchemaForOpenAI);
+      }
+
+      const fixed: any = { ...obj };
+
+      // For objects with properties, ensure additionalProperties is false
+      if (fixed.type === 'object' && fixed.properties) {
+        if (!fixed.additionalProperties) {
+          fixed.additionalProperties = false;
+        }
+        
+        // Recursively fix nested properties
+        if (fixed.properties) {
+          fixed.properties = fixSchemaForOpenAI(fixed.properties);
+        }
+      }
+
+      // For objects with items (arrays), fix the items schema
+      if (fixed.type === 'array' && fixed.items) {
+        fixed.items = fixSchemaForOpenAI(fixed.items);
+      }
+
+      // Recursively fix all other properties
+      for (const key in fixed) {
+        if (key !== 'properties' && key !== 'items' && typeof fixed[key] === 'object') {
+          fixed[key] = fixSchemaForOpenAI(fixed[key]);
+        }
+      }
+
+      return fixed;
+    };
+
+    schema = fixSchemaForOpenAI(schema);
+
+    // Ensure root schema has required structure for OpenAI
+    if (!schema.type) {
+      schema.type = 'object';
+    }
+    if (!schema.properties) {
+      schema.properties = {};
+    }
 
     // If MCP tools are configured, use Responses API
     if (data.mcpTools && data.mcpTools.length > 0) {

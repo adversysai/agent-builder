@@ -146,10 +146,10 @@ export default function MCPPanel({
                     className="w-full px-14 py-10 bg-background-base border border-border-faint rounded-10 text-sm text-accent-black focus:outline-none focus:border-heat-100 transition-colors appearance-none cursor-pointer"
                   >
                     <option value="">Select an MCP server...</option>
-                    {mcpServers.map((server) => {
+                    {mcpServers.map((server, index) => {
                       const isFirecrawl = server.name === 'Firecrawl' && server.isOfficial;
                       return (
-                        <option key={server._id} value={server._id}>
+                        <option key={server._id || server.id || `mcp-server-${index}`} value={server._id || server.id}>
                           {server.name} {isFirecrawl && '(API Key Required)'} {server.tools && `(${server.tools.length} tools)`}
                         </option>
                       );

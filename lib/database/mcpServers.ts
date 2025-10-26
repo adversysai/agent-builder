@@ -106,16 +106,35 @@ export async function toggleMCPEnabled(id: string, userId: string, enabled: bool
 export async function updateConnectionStatus(
   id: string, 
   userId: string, 
-  status: 'connected' | 'disconnected' | 'error'
+  updates: {
+    status: 'connected' | 'disconnected' | 'error';
+    tools?: string[];
+    error?: string;
+  }
 ): Promise<MCPServer> {
   const now = new Date().toISOString();
   
+  // Build dynamic SET clause based on provided updates
+  const setClause: string[] = ['"connectionStatus" = $3', '"updatedAt" = $4'];
+  const values: any[] = [id, userId, updates.status, now];
+  let paramCount = 5;
+  
+  if (updates.tools !== undefined) {
+    setClause.push(`tools = $${paramCount++}`);
+    values.push(updates.tools);
+  }
+  
+  if (updates.error !== undefined) {
+    setClause.push(`"lastError" = $${paramCount++}`);
+    values.push(updates.error);
+  }
+  
   const result = await db.query(`
     UPDATE "mcpServer" 
-    SET "connectionStatus" = $3, "updatedAt" = $4
+    SET ${setClause.join(', ')}
     WHERE id = $1 AND "userId" = $2
     RETURNING *
-  `, [id, userId, status, now]);
+  `, values);
   
   return result.rows[0];
 }
@@ -145,11 +164,21 @@ export async function seedOfficialMCPs(userId: string): Promise<MCPServer[]> {
 
   for (const server of officialServers) {
     try {
+      // Check if server already exists
+      const existing = await db.query(`
+        SELECT * FROM "mcpServer" 
+        WHERE "userId" = $1 AND url = $2
+      `, [userId, server.url]);
+      
+      if (existing.rows.length > 0) {
+        // Server already exists, skip
+        continue;
+      }
+      
       const result = await db.query(`
         INSERT INTO "mcpServer" (
           "userId", name, description, url, enabled, "createdAt", "updatedAt"
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT ("userId", url) DO NOTHING
         RETURNING *
       `, [userId, server.name, server.description, server.url, true, now, now]);
       

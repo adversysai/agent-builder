@@ -35,6 +35,7 @@ import {
   MoreHorizontal,
   Server,
   MousePointer2,
+  X,
 } from "lucide-react";
 import NodePanel from "./NodePanel";
 import MCPPanel from "./MCPPanel";
@@ -54,6 +55,7 @@ import ConfirmDialog from "./ConfirmDialog";
 import EdgeLabelModal from "./EdgeLabelModal";
 import ShareWorkflowModal from "./ShareWorkflowModal";
 import SaveAsTemplateModal from "./SaveAsTemplateModal";
+import AIWorkflowChat from "./AIWorkflowChat";
 import { toast } from "sonner";
 import { useWorkflow } from "@/hooks/useWorkflow";
 import { useWorkflowExecution } from "@/hooks/useWorkflowExecution";
@@ -259,6 +261,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
   const [showShareModal, setShowShareModal] = useState(false);
   const [showComingSoonModal, setShowComingSoonModal] = useState(false);
   const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -608,7 +611,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
     const getTextColor = () => {
       if (nodeType === 'note') return 'text-white'; // White text for note nodes (yellow background)
       if (nodeType === 'if-else' || nodeType === 'while' || nodeType === 'user-approval') {
-        return 'text-[#18181b]'; // Dark text for orange background nodes
+        return 'text-[#18181b]'; // Dark text for green background nodes
       }
       return 'text-[#18181b]'; // Default dark text
     };
@@ -811,7 +814,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
 
         const nextClassName = isActive ? 'active-edge' : isSelected ? 'selected-edge' : '';
         const currentClassName = edge.className || '';
-        const nextStroke = isActive ? '#FA5D19' : isSelected ? '#FA5D19' : '#d1d5db';
+        const nextStroke = isActive ? '#49FF16' : isSelected ? '#49FF16' : '#d1d5db';
         const nextWidth = isActive ? 2 : isSelected ? 2 : 1;
 
         const classChanged = currentClassName !== nextClassName;
@@ -1270,6 +1273,33 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
     });
   }, [workflow, nodes, edges, saveWorkflow]);
 
+  const handleApplyGeneratedWorkflow = useCallback((generatedWorkflow: any) => {
+    try {
+      // Apply the generated workflow to the builder
+      setNodes(generatedWorkflow.nodes);
+      setEdges(generatedWorkflow.edges);
+      
+      // Auto-layout the nodes
+      const layoutedNodes = autoLayoutNodes(generatedWorkflow.nodes, generatedWorkflow.edges);
+      setNodes(layoutedNodes);
+      
+      // Save the workflow
+      saveWorkflow({
+        nodes: generatedWorkflow.nodes,
+        edges: generatedWorkflow.edges,
+        name: generatedWorkflow.name,
+        description: generatedWorkflow.description,
+      });
+      
+      toast.success('AI-generated workflow applied!', {
+        description: `${generatedWorkflow.nodes.length} nodes created`,
+      });
+    } catch (error) {
+      console.error('Error applying generated workflow:', error);
+      toast.error('Failed to apply generated workflow');
+    }
+  }, [setNodes, setEdges, saveWorkflow]);
+
   const handleUpdateNodeData = useCallback((nodeId: string, data: any) => {
     try {
       setNodes((nds) => {
@@ -1512,6 +1542,14 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
           </svg>
           Settings
         </button>
+        <button
+          onClick={() => setShowAIChat(true)}
+          className="px-16 py-8 bg-blue-500 hover:bg-blue-600 text-white border border-blue-500 rounded-8 text-body-medium transition-colors flex items-center gap-8"
+          title="Generate with AI"
+        >
+          <Bot className="w-16 h-16" strokeWidth={2} />
+          Generate with AI
+        </button>
         {environment === 'production' && (
           <button
             onClick={handleShowTestAPI}
@@ -1558,6 +1596,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
           </svg>
           Save
         </button>
+
       </motion.div>
 
       <div className="flex flex-1">
@@ -1653,7 +1692,7 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
           />
           <MiniMap
             className="!bg-accent-white !border-border-faint"
-            nodeColor="#FA5D19"
+            nodeColor="#49FF16"
           />
         </ReactFlow>
 
@@ -1807,6 +1846,20 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
       />
+
+      {/* AI Workflow Chat */}
+      <AIWorkflowChat
+        isOpen={showAIChat}
+        onClose={() => setShowAIChat(false)}
+        onApplyWorkflow={handleApplyGeneratedWorkflow}
+        currentWorkflow={{
+          nodes,
+          edges,
+          name: workflow?.name,
+          description: workflow?.description
+        }}
+      />
+
 
       {/* Share Workflow Modal */}
       <ShareWorkflowModal

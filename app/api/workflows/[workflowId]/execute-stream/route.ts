@@ -29,6 +29,11 @@ export async function POST(
     async start(controller) {
       const sendEvent = (event: string, data: any) => {
         try {
+          // Check if controller is still open before sending
+          if (controller.desiredSize === null) {
+            console.warn('SSE controller is closed, skipping event:', event);
+            return;
+          }
           const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
           controller.enqueue(encoder.encode(message));
         } catch (error) {
@@ -92,6 +97,7 @@ export async function POST(
           openai: (userId ? await getLLMApiKey('openai', userId) : undefined) || process.env.OPENAI_API_KEY,
           firecrawl: process.env.FIRECRAWL_API_KEY, // Firecrawl keys are still environment-only for now
           arcade: process.env.ARCADE_API_KEY,
+          tavily: process.env.TAVILY_API_KEY, // Tavily keys are environment-only for now
         };
 
         // Prepare initial input - pass as object if it's an object, otherwise as string

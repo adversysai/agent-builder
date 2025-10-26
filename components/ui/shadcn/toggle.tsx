@@ -35,7 +35,7 @@ export default function Toggle({
     >
       <div
         className={cn(
-          "overlay bg-[#FA4500] transition-opacity",
+          "overlay bg-[#49FF16] transition-opacity",
           checked
             ? "opacity-0 group-hover:opacity-100"
             : "opacity-0 group-hover:opacity-0",

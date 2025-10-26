@@ -104,11 +104,11 @@ export function useToggleMCPEnabled() {
 // Hook to seed official MCPs (replaces useMutation(api.mcpServers.seedOfficialMCPs))
 export function useSeedOfficialMCPs() {
   const { mutate, loading, error } = useDatabaseMutation(
-    async () => {
+    async ({ userId }: { userId: string }) => {
       const response = await fetch('/api/database/mcp-servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'seed' }),
+        body: JSON.stringify({ action: 'seed', userId }),
       });
       if (!response.ok) throw new Error('Failed to seed official MCPs');
       return response.json();
@@ -121,11 +121,11 @@ export function useSeedOfficialMCPs() {
 // Hook to update connection status (replaces useMutation(api.mcpServers.updateConnectionStatus))
 export function useUpdateConnectionStatus() {
   const { mutate, loading, error } = useDatabaseMutation(
-    async ({ id, status, tools, error: errorMsg }: { id: string; status: 'connected' | 'disconnected' | 'error'; tools?: any[]; error?: string }) => {
+    async ({ id, status, tools, error: errorMsg, userId }: { id: string; status: 'connected' | 'disconnected' | 'error'; tools?: any[]; error?: string; userId: string }) => {
       const response = await fetch(`/api/database/mcp-servers/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'connection', status, tools, error: errorMsg }),
+        body: JSON.stringify({ action: 'connection', status, tools, error: errorMsg, userId }),
       });
       if (!response.ok) throw new Error('Failed to update connection status');
       return response.json();
@@ -138,11 +138,11 @@ export function useUpdateConnectionStatus() {
 // Hook to cleanup official MCPs (replaces useMutation(api.mcpServers.cleanupOfficialMCPs))
 export function useCleanupOfficialMCPs() {
   const { mutate, loading, error } = useDatabaseMutation(
-    async () => {
+    async ({ userId }: { userId: string }) => {
       const response = await fetch('/api/database/mcp-servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cleanup' }),
+        body: JSON.stringify({ action: 'cleanup', userId }),
       });
       if (!response.ok) throw new Error('Failed to cleanup official MCPs');
       return response.json();

@@ -13,7 +13,7 @@ import { providerRateLimiter } from '../token-bucket';
 export async function executeAgentNode(
   node: WorkflowNode,
   state: WorkflowState,
-  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string },
+  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string },
   maxRetries: number = 3
 ): Promise<any> {
   let lastError: any;
@@ -39,7 +39,7 @@ export async function executeAgentNode(
         
         // If this is the last attempt, throw the error
         if (attempt === maxRetries) {
-          const message = getRateLimitMessage(rateLimitInfo);
+          const message = rateLimitInfo ? getRateLimitMessage(rateLimitInfo) : 'Rate limited. Please wait a moment and try again.';
           throw new Error(message);
         }
         
@@ -67,7 +67,7 @@ export async function executeAgentNode(
 async function executeAgentNodeInternal(
   node: WorkflowNode,
   state: WorkflowState,
-  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string }
+  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string }
 ): Promise<any> {
   const { data } = node;
 
@@ -241,14 +241,24 @@ async function executeAgentNodeInternal(
         }
 
         // Build MCP servers configuration
-        const mcpServers = realMcpTools.map((mcp: any) => ({
-          type: 'url' as const,
-          url: mcp.url.includes('{FIRECRAWL_API_KEY}')
-            ? mcp.url.replace('{FIRECRAWL_API_KEY}', apiKeys.firecrawl || '')
-            : mcp.url,
-          name: mcp.name,
-          authorization_token: mcp.accessToken,
-        }));
+        const mcpServers = realMcpTools.map((mcp: any) => {
+          let processedUrl = mcp.url;
+          
+          // Replace API key placeholders
+          if (processedUrl.includes('{FIRECRAWL_API_KEY}')) {
+            processedUrl = processedUrl.replace('{FIRECRAWL_API_KEY}', apiKeys.firecrawl || '');
+          }
+          if (processedUrl.includes('{TAVILY_API_KEY}')) {
+            processedUrl = processedUrl.replace('{TAVILY_API_KEY}', apiKeys.tavily || '');
+          }
+          
+          return {
+            type: 'url' as const,
+            url: processedUrl,
+            name: mcp.name,
+            authorization_token: mcp.accessToken,
+          };
+        });
 
         const response = await client.beta.messages.create({
           model: modelName,
@@ -524,7 +534,7 @@ async function executeAgentNodeInternal(
 
     if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
       const rateLimitInfo = extractRateLimitInfo(error);
-      const message = getRateLimitMessage(rateLimitInfo);
+      const message = rateLimitInfo ? getRateLimitMessage(rateLimitInfo) : 'Rate limited. Please wait a moment and try again.';
       throw new Error(message);
     }
 

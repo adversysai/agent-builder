@@ -28,7 +28,7 @@ const categories = [
 const difficultyLevels = [
   { value: "beginner", label: "Beginner", color: "text-green-600" },
   { value: "intermediate", label: "Intermediate", color: "text-yellow-600" },
-  { value: "advanced", label: "Advanced", color: "text-orange-600" },
+  { value: "advanced", label: "Advanced", color: "text-green-600" },
   { value: "expert", label: "Expert", color: "text-red-600" },
 ];
 

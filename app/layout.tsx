@@ -23,9 +23,9 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en">
         <head>
-          <title>Open Agent Builder</title>
+          <title>Dexflow</title>
           <meta name="description" content="Build AI agents and workflows with visual programming" />
-          <link rel="icon" href="/favicon.png" />
+          <link rel="icon" href="/dexflow_icon_trans.svg" />
           <ColorStyles />
         </head>
         <body
