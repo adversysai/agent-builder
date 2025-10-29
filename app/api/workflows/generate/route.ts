@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return createUnauthorizedResponse(authResult.error || 'Authentication required');
     }
 
-    const { prompt, conversationHistory = [], userId, currentWorkflow } = await request.json();
+    const { prompt, conversationHistory = [], userId, currentWorkflow, preferredModel } = await request.json();
 
     if (!prompt || typeof prompt !== 'string') {
       return NextResponse.json(
@@ -27,21 +27,113 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user's API key if available
-    const userApiKey = userId ? await getLLMApiKey('anthropic', userId) : null;
-    const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY;
+    // Determine which model to use for workflow generation
+    // Priority: 1. Admin preference, 2. Available API keys, 3. Fallback to OpenAI
+    let selectedProvider = 'openai'; // Default to OpenAI
+    let selectedModel = 'gpt-4o';
+    let apiKey: string | null = null;
+    let client: any = null;
+
+    // Check available API keys
+    const availableKeys = {
+      anthropic: userId ? await getLLMApiKey('anthropic', userId) : process.env.ANTHROPIC_API_KEY,
+      openai: userId ? await getLLMApiKey('openai', userId) : process.env.OPENAI_API_KEY,
+      google: userId ? await getLLMApiKey('google', userId) : process.env.GOOGLE_API_KEY,
+      groq: userId ? await getLLMApiKey('groq', userId) : process.env.GROQ_API_KEY,
+    };
+
+    // Get model preference (user selection takes priority over admin setting)
+    const adminPreference = process.env.WORKFLOW_GENERATOR_MODEL || 'auto';
+    const finalPreference = preferredModel || adminPreference;
+
+    // Select model based on preference and availability
+    if (finalPreference === 'auto') {
+      // Auto-select best available model: OpenAI (best for analysis), Anthropic, Google, Groq
+      if (availableKeys.openai) {
+        selectedProvider = 'openai';
+        selectedModel = 'gpt-4o';
+        apiKey = availableKeys.openai;
+      } else if (availableKeys.anthropic) {
+        selectedProvider = 'anthropic';
+        selectedModel = 'claude-sonnet-4-5-20250929';
+        apiKey = availableKeys.anthropic;
+      } else if (availableKeys.google) {
+        selectedProvider = 'google';
+        selectedModel = 'gemini-2.5-pro';
+        apiKey = availableKeys.google;
+      } else if (availableKeys.groq) {
+        selectedProvider = 'groq';
+        selectedModel = 'gpt-oss-120b';
+        apiKey = availableKeys.groq;
+      }
+    } else {
+      // Use user-specified preference
+      if (finalPreference === 'openai' && availableKeys.openai) {
+        selectedProvider = 'openai';
+        selectedModel = 'gpt-4o';
+        apiKey = availableKeys.openai;
+      } else if (finalPreference === 'anthropic' && availableKeys.anthropic) {
+        selectedProvider = 'anthropic';
+        selectedModel = 'claude-sonnet-4-5-20250929';
+        apiKey = availableKeys.anthropic;
+      } else if (finalPreference === 'google' && availableKeys.google) {
+        selectedProvider = 'google';
+        selectedModel = 'gemini-2.5-pro';
+        apiKey = availableKeys.google;
+      } else if (finalPreference === 'groq' && availableKeys.groq) {
+        selectedProvider = 'groq';
+        selectedModel = 'gpt-oss-120b';
+        apiKey = availableKeys.groq;
+      } else {
+        // Fallback to auto-selection if preferred model not available
+        if (availableKeys.openai) {
+          selectedProvider = 'openai';
+          selectedModel = 'gpt-4o';
+          apiKey = availableKeys.openai;
+        } else if (availableKeys.anthropic) {
+          selectedProvider = 'anthropic';
+          selectedModel = 'claude-sonnet-4-5-20250929';
+          apiKey = availableKeys.anthropic;
+        } else if (availableKeys.google) {
+          selectedProvider = 'google';
+          selectedModel = 'gemini-2.5-pro';
+          apiKey = availableKeys.google;
+        } else if (availableKeys.groq) {
+          selectedProvider = 'groq';
+          selectedModel = 'gpt-oss-120b';
+          apiKey = availableKeys.groq;
+        }
+      }
+    }
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Anthropic API key not configured' },
+        { error: 'No API keys configured. Please add at least one API key (OpenAI, Anthropic, Google, or Groq).' },
         { status: 500 }
       );
     }
 
-    // Create Anthropic client with user's key
-    const client = new Anthropic({ apiKey });
+    console.log(`🤖 Workflow generation using ${selectedProvider} (${selectedModel}) - User preference: ${finalPreference}, Admin setting: ${adminPreference}`);
 
-    // Build conversation history - clean message format for Anthropic
+    // Create appropriate client based on selected provider
+    if (selectedProvider === 'anthropic') {
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      client = new Anthropic({ apiKey });
+    } else if (selectedProvider === 'openai') {
+      const OpenAI = (await import('openai')).default;
+      client = new OpenAI({ apiKey });
+    } else if (selectedProvider === 'google') {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      client = new GoogleGenerativeAI(apiKey);
+    } else if (selectedProvider === 'groq') {
+      const OpenAI = (await import('openai')).default;
+      client = new OpenAI({
+        apiKey,
+        baseURL: 'https://api.groq.com/openai/v1',
+      });
+    }
+
+    // Build conversation history - clean message format
     const cleanMessages = conversationHistory.map((msg: any) => ({
       role: msg.role,
       content: msg.content
@@ -52,49 +144,98 @@ export async function POST(request: NextRequest) {
       { role: 'user' as const, content: prompt }
     ];
 
-    // Generate workflow using Claude with extended thinking
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 12000, // Must be greater than thinking budget
-      messages,
-      system: await getWorkflowGeneratorPrompt(currentWorkflow),
-      thinking: {
-        type: 'enabled',
-        budget_tokens: 10000 // Allow Claude to think through complex logic
-      }
-    });
+    // Generate workflow using the selected provider
+    let response;
+    const systemPrompt = await getWorkflowGeneratorPrompt(currentWorkflow);
+
+    if (selectedProvider === 'anthropic') {
+      // Anthropic with thinking
+      response = await client.messages.create({
+        model: selectedModel,
+        max_tokens: 12000,
+        messages,
+        system: systemPrompt,
+        thinking: {
+          type: 'enabled',
+          budget_tokens: 10000
+        }
+      });
+    } else if (selectedProvider === 'openai') {
+      // OpenAI with function calling
+      response = await client.chat.completions.create({
+        model: selectedModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages
+        ],
+        max_tokens: 12000,
+        temperature: 0.7,
+      });
+    } else if (selectedProvider === 'google') {
+      // Google Gemini
+      const model = client.getGenerativeModel({ model: selectedModel });
+      const fullPrompt = `${systemPrompt}\n\nUser: ${prompt}`;
+      const result = await model.generateContent(fullPrompt);
+      response = { content: [{ text: result.response.text() }] };
+    } else if (selectedProvider === 'groq') {
+      // Groq (OpenAI compatible)
+      response = await client.chat.completions.create({
+        model: selectedModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages
+        ],
+        max_tokens: 12000,
+        temperature: 0.7,
+      });
+    }
 
     // Extract the generated workflow from the response
     let generatedWorkflow: Workflow;
     
     try {
-      // Handle different response formats - look for text content (skip thinking)
-      let textContent: any = null;
+      // Get response text based on provider
+      let responseText: string;
       
-      // Find the text content (skip thinking content)
-      for (const content of response.content) {
-        if (content.type === 'text') {
-          textContent = content;
-          break;
+      if (selectedProvider === 'anthropic') {
+        // Handle Anthropic response format - look for text content (skip thinking)
+        let textContent: any = null;
+        
+        // Find the text content (skip thinking content)
+        for (const content of response.content) {
+          if (content.type === 'text') {
+            textContent = content;
+            break;
+          }
         }
+        
+        if (!textContent) {
+          throw new Error('No text content found in Anthropic response');
+        }
+        
+        responseText = textContent.text;
+      } else if (selectedProvider === 'openai' || selectedProvider === 'groq') {
+        // Handle OpenAI/Groq response format
+        responseText = response.choices[0].message.content || '';
+      } else if (selectedProvider === 'google') {
+        // Handle Google response format
+        responseText = response.content[0].text;
+      } else {
+        throw new Error(`Unknown provider: ${selectedProvider}`);
       }
       
-      if (!textContent) {
-        throw new Error('No text content found in Claude response');
-      }
+      console.log(`${selectedProvider} response text:`, responseText);
       
-      console.log('Claude response text:', textContent.text);
-      
-      // Try to extract JSON from the text (Claude might wrap it in markdown)
-      let jsonText = textContent.text;
+      // Try to extract JSON from the text (might be wrapped in markdown)
+      let jsonText = responseText;
       
       // Look for JSON code blocks
-      const jsonMatch = textContent.text.match(/```json\n([\s\S]*?)\n```/);
+      const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
       if (jsonMatch) {
         jsonText = jsonMatch[1];
       } else {
         // Look for JSON object in the text
-        const jsonObjectMatch = textContent.text.match(/\{[\s\S]*\}/);
+        const jsonObjectMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonObjectMatch) {
           jsonText = jsonObjectMatch[0];
         }
@@ -102,29 +243,28 @@ export async function POST(request: NextRequest) {
       
       console.log('Extracted JSON text:', jsonText);
       
-      // Check if the response is plain text (not JSON) - likely a refusal or explanation
+      // Check if the response is plain text (conversational) or JSON (workflow)
       if (!jsonText.trim().startsWith('{') && !jsonText.trim().startsWith('[')) {
-        return NextResponse.json(
-          { 
-            error: 'Claude declined to generate workflow',
-            details: 'Claude provided an explanation instead of a workflow. This might be due to safety concerns or unclear requirements.',
-            claudeResponse: jsonText,
-            suggestion: 'Please try rephrasing your request with more specific, legitimate use cases.'
-          },
-          { status: 400 }
-        );
+        // This is a conversational response, not a workflow
+        return NextResponse.json({
+          success: true,
+          isConversational: true,
+          message: responseText,
+          workflow: null
+        });
       }
       
+      // This is a workflow JSON response
       generatedWorkflow = JSON.parse(jsonText);
     } catch (parseError) {
       console.error('Failed to parse generated workflow:', parseError);
-      console.error('Raw response:', response.content);
+      console.error('Raw response:', response);
       return NextResponse.json(
         { 
           error: 'Failed to generate valid workflow',
-          details: 'Claude response could not be parsed as JSON',
+          details: `${selectedProvider} response could not be parsed as JSON`,
           parseError: parseError instanceof Error ? parseError.message : 'Unknown parse error',
-          rawResponse: response.content
+          rawResponse: response
         },
         { status: 500 }
       );

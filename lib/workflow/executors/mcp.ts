@@ -5,6 +5,7 @@ import FirecrawlApp from '@mendable/firecrawl-js';
 import { getServerAPIKeys } from '@/lib/api/config';
 import { resolveMCPServer } from '@/lib/mcp/resolver';
 import { executeTavilyMCPNode } from './tavily-mcp';
+import { executeGitHubMCPNode } from './github-mcp';
 
 /**
  * Extract specific field from Firecrawl response
@@ -126,7 +127,7 @@ async function executeGenericMCPServer(serverConfig: any, state: WorkflowState):
 export async function executeMCPNode(
   node: WorkflowNode,
   state: WorkflowState,
-  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string }
+  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string; github?: string }
 ): Promise<any> {
   const { data } = node;
 
@@ -142,11 +143,14 @@ export async function executeMCPNode(
 
   // If using new format with server ID, resolve it
   if (nodeData.mcpServerId) {
+    console.log('🔍 Resolving MCP server ID:', nodeData.mcpServerId);
     const resolvedServer = await resolveMCPServer(nodeData.mcpServerId);
     if (resolvedServer) {
+      console.log('✅ Resolved MCP server:', resolvedServer);
       mcpServers = [resolvedServer];
     } else {
-      console.warn(`Could not resolve MCP server ID: ${nodeData.mcpServerId}`);
+      console.warn(`❌ Could not resolve MCP server ID: ${nodeData.mcpServerId}`);
+      console.log('🔍 Falling back to inline mcpServers:', nodeData.mcpServers);
     }
   }
 
@@ -169,6 +173,11 @@ export async function executeMCPNode(
       url: serverConfig.url,
       authType: serverConfig.authType,
       label: serverConfig.label
+    });
+    console.log('🔍 GitHub detection check:', {
+      nameCheck: serverConfig.name.toLowerCase().includes('github'),
+      urlApiCheck: serverConfig.url?.includes('api.github.com'),
+      urlGithubCheck: serverConfig.url?.includes('github.com')
     });
     
     // Handle Tavily MCP server - more robust detection
@@ -325,9 +334,48 @@ export async function executeMCPNode(
         console.error('❌ MCP Firecrawl server-side execution failed:', error);
         throw new Error(`Firecrawl ${action} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
+    } else if (serverConfig.name.toLowerCase().includes('github') || 
+               serverConfig.url?.includes('api.github.com') || 
+               serverConfig.url?.includes('github.com')) {
+      // GitHub MCP execution
+      console.log('🔍 MCP executor running GitHub on server side');
+      console.log('🔍 Server config:', { name: serverConfig.name, url: serverConfig.url, authType: serverConfig.authType });
+      console.log('🔍 GitHub detection - name check:', serverConfig.name.toLowerCase().includes('github'));
+      console.log('🔍 GitHub detection - URL api.github.com check:', serverConfig.url?.includes('api.github.com'));
+      console.log('🔍 GitHub detection - URL github.com check:', serverConfig.url?.includes('github.com'));
+      
+      if (!apiKeys?.github) {
+        console.log('❌ GITHUB_TOKEN not configured');
+        throw new Error('GITHUB_TOKEN not configured. Add it to your .env.local file:\nGITHUB_TOKEN=your_github_personal_access_token_here');
+      }
+
+      console.log('✅ GITHUB_TOKEN found, proceeding with execution');
+      try {
+        const result = await executeGitHubMCPNode(node, state, apiKeys.github);
+        console.log('✅ GitHub MCP execution completed successfully');
+        results.push({
+          server: 'GitHub',
+          tool: nodeData.mcpAction || 'search_code',
+          success: result.success,
+          data: result.data,
+          error: result.error,
+        });
+        if (result.success) {
+          state.variables.lastOutput = result.data;
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('❌ GitHub execution error:', error);
+        results.push({
+          server: 'GitHub',
+          error: errorMessage,
+          success: false,
+        });
+      }
     } else {
       // Generic MCP server support (DeepWiki, etc.)
       console.log('🔍 Unknown MCP server, trying generic handler:', serverConfig.name);
+      console.log('🔍 Server config details:', JSON.stringify(serverConfig, null, 2));
       try {
         const result = await executeGenericMCPServer(serverConfig, state);
         results.push({

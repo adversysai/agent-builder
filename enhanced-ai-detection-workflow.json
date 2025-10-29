@@ -1,0 +1,207 @@
+{
+  "name": "Advanced AI Detection & Security Analysis",
+  "description": "Comprehensive AI usage detection with multiple search strategies and intelligent analysis",
+  "category": "Security",
+  "tags": ["ai-detection", "security", "github", "compliance", "shadow-ai"],
+  "difficulty": "intermediate",
+  "estimatedTime": "5-8 minutes",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "position": {"x": 100, "y": 400},
+      "data": {
+        "nodeType": "start",
+        "label": "Start",
+        "nodeName": "Start",
+        "inputVariables": [
+          {
+            "name": "repository",
+            "type": "string",
+            "required": true,
+            "description": "Repository in format 'owner/repo' (e.g., 'microsoft/vscode')"
+          }
+        ]
+      }
+    },
+    {
+      "id": "discover-repo",
+      "type": "mcp",
+      "position": {"x": 400, "y": 400},
+      "data": {
+        "nodeType": "mcp",
+        "label": "Repository Discovery",
+        "nodeName": "Repository Discovery",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "list_repositories",
+        "mcpParams": {
+          "owner": "{{input.repository}}"
+        }
+      }
+    },
+    {
+      "id": "search-ai-frameworks",
+      "type": "mcp",
+      "position": {"x": 700, "y": 300},
+      "data": {
+        "nodeType": "mcp",
+        "label": "AI Frameworks Search",
+        "nodeName": "AI Frameworks Search",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "search_code",
+        "mcpParams": {
+          "query": "(langchain OR transformers OR torch OR tensorflow OR huggingface OR openai OR anthropic) repo:{{input.repository}}",
+          "per_page": 50
+        }
+      }
+    },
+    {
+      "id": "search-api-keys",
+      "type": "mcp",
+      "position": {"x": 700, "y": 500},
+      "data": {
+        "nodeType": "mcp",
+        "label": "API Keys & Config Search",
+        "nodeName": "API Keys & Config Search",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "search_code",
+        "mcpParams": {
+          "query": "(OPENAI_API_KEY OR ANTHROPIC_API_KEY OR API_KEY OR api_key OR secret OR token) repo:{{input.repository}}",
+          "per_page": 50
+        }
+      }
+    },
+    {
+      "id": "search-models",
+      "type": "mcp",
+      "position": {"x": 1000, "y": 300},
+      "data": {
+        "nodeType": "mcp",
+        "label": "AI Models & Files Search",
+        "nodeName": "AI Models & Files Search",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "search_code",
+        "mcpParams": {
+          "query": "(gpt-4 OR gpt-3 OR claude OR llama OR model OR .pkl OR .bin OR .safetensors) repo:{{input.repository}}",
+          "per_page": 50
+        }
+      }
+    },
+    {
+      "id": "search-mcp-agents",
+      "type": "mcp",
+      "position": {"x": 1000, "y": 500},
+      "data": {
+        "nodeType": "mcp",
+        "label": "MCP & Agents Search",
+        "nodeName": "MCP & Agents Search",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "search_code",
+        "mcpParams": {
+          "query": "(mcp OR agent OR automation OR workflow OR ai-tool) repo:{{input.repository}}",
+          "per_page": 50
+        }
+      }
+    },
+    {
+      "id": "ai-analysis",
+      "type": "agent",
+      "position": {"x": 1300, "y": 400},
+      "data": {
+        "nodeType": "agent",
+        "label": "AI Security Analysis",
+        "nodeName": "AI Security Analysis",
+        "instructions": "Analyze all GitHub search results to create a comprehensive AI detection and security report. Include:\n\n## Executive Summary\n- Overall AI usage assessment\n- Risk level (Low/Medium/High)\n- Key findings\n\n## Detailed Findings\n### 1. AI Frameworks & Libraries\n- List all AI frameworks found\n- Usage patterns and integration approaches\n- Version information if available\n\n### 2. API Keys & Configuration\n- Exposed API keys or secrets (HIGH RISK)\n- Configuration files with AI settings\n- Environment variable usage\n\n### 3. AI Models & Files\n- Model files found (.pkl, .bin, .safetensors)\n- Model types and sizes\n- Storage locations\n\n### 4. MCP & Agent Usage\n- Model Context Protocol implementations\n- AI agent configurations\n- Automation workflows\n\n## Security Assessment\n- Exposed credentials or secrets\n- Insecure configurations\n- Shadow AI usage\n- Compliance concerns\n\n## Recommendations\n- Immediate actions needed\n- Security improvements\n- Best practices\n- Monitoring suggestions\n\nFormat with clear sections, bullet points, and risk indicators (🔴 HIGH, 🟡 MEDIUM, 🟢 LOW).",
+        "model": "anthropic/claude-sonnet-4-5-20250929",
+        "outputFormat": "Text"
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "position": {"x": 1600, "y": 400},
+      "data": {
+        "nodeType": "end",
+        "label": "End",
+        "nodeName": "End"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "discover-repo"
+    },
+    {
+      "id": "e2",
+      "source": "discover-repo",
+      "target": "search-ai-frameworks"
+    },
+    {
+      "id": "e3",
+      "source": "discover-repo",
+      "target": "search-api-keys"
+    },
+    {
+      "id": "e4",
+      "source": "search-ai-frameworks",
+      "target": "search-models"
+    },
+    {
+      "id": "e5",
+      "source": "search-api-keys",
+      "target": "search-mcp-agents"
+    },
+    {
+      "id": "e6",
+      "source": "search-models",
+      "target": "ai-analysis"
+    },
+    {
+      "id": "e7",
+      "source": "search-mcp-agents",
+      "target": "ai-analysis"
+    },
+    {
+      "id": "e8",
+      "source": "ai-analysis",
+      "target": "end"
+    }
+  ]
+}

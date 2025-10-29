@@ -91,7 +91,7 @@ export const WorkflowStateAnnotation = Annotation.Root({
 export class LangGraphExecutor {
   private workflow: Workflow;
   private graph: any; // Compiled StateGraph
-  private apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; arcade?: string };
+  private apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; arcade?: string; github?: string; google?: string };
   private onNodeUpdate?: (nodeId: string, result: NodeExecutionResult) => void;
   private checkpointer: MemorySaver;
   private parallelNodeIds = new Set<string>();
@@ -104,7 +104,7 @@ export class LangGraphExecutor {
   constructor(
     workflow: Workflow,
     onNodeUpdate?: (nodeId: string, result: NodeExecutionResult) => void,
-    apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; arcade?: string }
+    apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; arcade?: string; github?: string; google?: string }
   ) {
     
     this.workflow = workflow;
@@ -526,111 +526,15 @@ export class LangGraphExecutor {
         return result;
       }
 
-      case 'mcp': {
-        const mcpServers = data.mcpServers || [];
-        if (mcpServers.length === 0) return { error: 'No MCP servers configured' };
-
-        const server = mcpServers[0];
-        const action = data.mcpAction || 'scrape';
-
-        if (server.name.toLowerCase().includes('firecrawl')) {
-          const FirecrawlApp = (await import('@mendable/firecrawl-js')).default;
-          const firecrawl = new FirecrawlApp({ apiKey: this.apiKeys?.firecrawl });
-
-          if (action === 'scrape') {
-            // Apply variable substitution to mcpParams if they exist
-            let mcpParams = data.mcpParams;
-            if (mcpParams && typeof mcpParams === 'object') {
-              mcpParams = JSON.parse(JSON.stringify(mcpParams)); // Deep clone
-              for (const [key, value] of Object.entries(mcpParams)) {
-                if (typeof value === 'string') {
-                  mcpParams[key] = substituteVariables(value, state);
-                }
-              }
-            }
-            
-            // Get URL from various possible sources
-            let url = data.scrapeUrl || mcpParams?.url || state.variables.lastOutput || state.variables.input;
-            
-            // Ensure url is a string and not empty
-            if (!url || typeof url !== 'string') {
-              throw new Error(`Invalid URL for scraping: ${url}. Expected a string URL.`);
-            }
-            
-            // Trim and validate URL
-            url = url.trim();
-            if (!url) {
-              throw new Error('URL is empty after trimming');
-            }
-            
-            console.log(`Scraping URL: ${url}`);
-            const result = await firecrawl.scrape(url, { formats: ['markdown'] });
-            return result.markdown || result;
-          }
-
-          if (action === 'search') {
-            const query = data.searchQuery || state.variables.lastOutput;
-            const result = await firecrawl.search(query, { limit: 5 });
-            return result;
-          }
-        }
-
-        // Handle Tavily MCP server
-        if (server.name.toLowerCase().includes('tavily')) {
-          console.log('🔍 executeNodePure: Handling Tavily MCP server');
-          
-          // Type assertion to fix TypeScript error
-          const apiKeys = this.apiKeys as any;
-          if (!apiKeys?.tavily) {
-            throw new Error('TAVILY_API_KEY not configured. Add it to your .env.local file:\nTAVILY_API_KEY=your_key_here');
-          }
-
-          // Apply variable substitution to mcpParams
-          let mcpParams = data.mcpParams || {};
-          if (typeof mcpParams === 'object') {
-            mcpParams = JSON.parse(JSON.stringify(mcpParams)); // Deep clone
-            for (const [key, value] of Object.entries(mcpParams)) {
-              if (typeof value === 'string') {
-                mcpParams[key] = substituteVariables(value, state);
-              }
-            }
-          }
-
-          console.log('🔍 executeNodePure: Tavily search params:', mcpParams);
-
-          try {
-            const response = await fetch('https://api.tavily.com/search', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKeys.tavily}`
-              },
-              body: JSON.stringify({
-                query: mcpParams.query || 'default search',
-                search_depth: 'basic',
-                include_answer: true,
-                include_images: false,
-                include_raw_content: false,
-                max_results: mcpParams.max_results || 5
-              })
-            });
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`Tavily search failed: ${response.status} ${response.statusText} - ${errorText}`);
-            }
-
-            const result = await response.json();
-            console.log('✅ executeNodePure: Tavily search completed successfully');
-            return result;
-          } catch (error) {
-            console.error('❌ executeNodePure: Tavily search failed:', error);
-            throw error;
-          }
-        }
-
-        return { error: 'MCP server not implemented' };
-      }
+      case 'mcp':
+        // MCP nodes should use the full executeNode implementation
+        // This ensures all MCP servers (including GitHub) are properly handled
+        console.log(`WARNING: Node type 'mcp' not in executeNodePure, using executeNode fallback`);
+        const mcpTempState = {
+          variables: state.variables,
+          chatHistory: state.chatHistory,
+        };
+        return await this.executeNode(node, mcpTempState);
 
       case 'transform':
       case 'data-transform': {
@@ -699,11 +603,11 @@ export class LangGraphExecutor {
 
       case 'while': {
         // Execute while loop check using the proper method
-        const tempState: WorkflowState = {
+        const whileTempState: WorkflowState = {
           variables: state.variables,
           chatHistory: state.chatHistory,
         };
-        return await this.executeWhileNode(node, tempState, state);
+        return await this.executeWhileNode(node, whileTempState, state);
       }
 
       case 'end':
@@ -712,11 +616,11 @@ export class LangGraphExecutor {
       default:
         // For node types not in executeNodePure, fall back to the full executeNode implementation
         console.log(`WARNING: Node type '${nodeType}' not in executeNodePure, using executeNode fallback`);
-        const tempState = {
+        const defaultTempState = {
           variables: state.variables,
           chatHistory: state.chatHistory,
         };
-        return await this.executeNode(node, tempState);
+        return await this.executeNode(node, defaultTempState);
     }
   }
 
@@ -729,12 +633,12 @@ export class LangGraphExecutor {
       if (!node) return 'default';
 
       // Execute the if-else condition
-      const tempState: WorkflowState = {
+      const logicTempState: WorkflowState = {
         variables: state.variables,
         chatHistory: state.chatHistory,
       };
 
-      const result = await executeLogicNode(node, tempState);
+      const result = await executeLogicNode(node, logicTempState);
 
       // Return the branch handle ('if' or 'else')
       return result.branch || 'else';

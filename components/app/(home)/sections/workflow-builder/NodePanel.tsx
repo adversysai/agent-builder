@@ -7,6 +7,7 @@ import VariableReferencePicker from "./VariableReferencePicker";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 import { useEnabledMCPs } from "@/lib/hooks/useMCPServers";
+import { useUserLLMKeys } from '@/lib/hooks/useUserLLMKeys';
 
 // Type definitions
 type UserLLMKey = {
@@ -53,43 +54,84 @@ export default function NodePanel({
   // Fetch enabled MCP servers from central registry
   // MCP and LLM keys
   const { mcpServers } = useEnabledMCPs();
-  const userLLMKeys: UserLLMKey[] = [];
+  const { userLLMKeys = [] } = useUserLLMKeys();
 
-  // Get available models based on active API keys
+  // Get available models based on active API keys and environment variables
   const getAvailableModels = () => {
-    if (!userLLMKeys) return [];
-
     const models: { provider: string; models: Array<{ id: string; name: string }> }[] = [];
 
-    // Check for active keys and add corresponding models
-    const activeKeys = userLLMKeys.filter(key => key.active);
+    // Check for user-configured API keys first
+    if (userLLMKeys && userLLMKeys.length > 0) {
+      const activeKeys = userLLMKeys.filter(key => key.active);
 
-    activeKeys.forEach(key => {
-      if (key.provider === 'anthropic') {
-        models.push({
+      activeKeys.forEach(key => {
+        if (key.provider === 'anthropic') {
+          models.push({
+            provider: 'Anthropic',
+            models: [
+              { id: 'anthropic/claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5' },
+              { id: 'anthropic/claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5' },
+            ]
+          });
+        } else if (key.provider === 'openai') {
+          models.push({
+            provider: 'OpenAI',
+            models: [
+              { id: 'openai/gpt-4o', name: 'GPT-4o' },
+              { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
+            ]
+          });
+        } else if (key.provider === 'google') {
+          models.push({
+            provider: 'Google',
+            models: [
+              { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+              { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+            ]
+          });
+        } else if (key.provider === 'groq') {
+          models.push({
+            provider: 'Groq',
+            models: [
+              { id: 'groq/openai/gpt-oss-120b', name: 'GPT OSS 120B' },
+            ]
+          });
+        }
+      });
+    }
+
+    // If no user keys, show all providers as available (they can add API keys)
+    if (models.length === 0) {
+      models.push(
+        {
           provider: 'Anthropic',
           models: [
             { id: 'anthropic/claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5' },
             { id: 'anthropic/claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5' },
           ]
-        });
-      } else if (key.provider === 'openai') {
-        models.push({
+        },
+        {
           provider: 'OpenAI',
           models: [
-            { id: 'openai/gpt-4o', name: 'GPT-5' },
-            { id: 'openai/gpt-4o-mini', name: 'GPT-5 Mini' },
+            { id: 'openai/gpt-4o', name: 'GPT-4o' },
+            { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
           ]
-        });
-      } else if (key.provider === 'groq') {
-        models.push({
+        },
+        {
+          provider: 'Google',
+          models: [
+            { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+            { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+          ]
+        },
+        {
           provider: 'Groq',
           models: [
             { id: 'groq/openai/gpt-oss-120b', name: 'GPT OSS 120B' },
           ]
-        });
-      }
-    });
+        }
+      );
+    }
 
     return models;
   };

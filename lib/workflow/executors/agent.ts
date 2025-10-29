@@ -13,7 +13,7 @@ import { providerRateLimiter } from '../token-bucket';
 export async function executeAgentNode(
   node: WorkflowNode,
   state: WorkflowState,
-  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string },
+  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string; google?: string },
   maxRetries: number = 3
 ): Promise<any> {
   let lastError: any;
@@ -67,7 +67,7 @@ export async function executeAgentNode(
 async function executeAgentNodeInternal(
   node: WorkflowNode,
   state: WorkflowState,
-  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string }
+  apiKeys?: { anthropic?: string; groq?: string; openai?: string; firecrawl?: string; tavily?: string; github?: string; google?: string }
 ): Promise<any> {
   const { data } = node;
 
@@ -494,6 +494,36 @@ async function executeAgentNodeInternal(
         responseText = response.content as string;
         usage = response.response_metadata?.usage || {};
       }
+    } else if (provider === 'google' && apiKeys?.google) {
+      // Google Gemini execution
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(apiKeys.google);
+      
+      // Convert model name from 'google/gemini-2.5-pro' to 'gemini-2.5-pro'
+      const geminiModelName = modelName.replace('google/', '');
+      const model = genAI.getGenerativeModel({ model: geminiModelName });
+      
+      // Convert messages to Gemini format
+      const lastMessage = messages[messages.length - 1];
+      const prompt = lastMessage.content as string;
+      
+      // Note: Gemini doesn't support MCP tools, so skip if MCP tools are configured
+      if (hasMcpTools) {
+        console.warn('⚠️ Gemini does not support MCP tools. MCP tools will be ignored for this request.');
+      }
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      responseText = response.text();
+      
+      // Gemini doesn't provide detailed usage info in the same format
+      usage = {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+      };
     } else {
       throw new Error(`No API key available for provider: ${provider}`);
     }

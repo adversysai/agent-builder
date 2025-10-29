@@ -1,0 +1,65 @@
+{
+  "name": "Test GitHub MCP",
+  "description": "Simple test for GitHub MCP",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "data": {
+        "nodeType": "start",
+        "label": "Start",
+        "nodeName": "Start",
+        "inputVariables": [
+          {
+            "name": "repo",
+            "type": "string",
+            "required": true,
+            "description": "GitHub repository"
+          }
+        ]
+      }
+    },
+    {
+      "id": "search",
+      "type": "mcp",
+      "data": {
+        "nodeType": "mcp",
+        "label": "Search Code",
+        "nodeName": "Search Code",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "search_code",
+        "mcpParams": {
+          "q": "openai repo:{{input.repo}}"
+        }
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "data": {
+        "nodeType": "end",
+        "label": "End",
+        "nodeName": "End"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "search"
+    },
+    {
+      "id": "e2",
+      "source": "search",
+      "target": "end"
+    }
+  ]
+}

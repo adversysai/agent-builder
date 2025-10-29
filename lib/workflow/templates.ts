@@ -2290,6 +2290,1044 @@ Make it actionable for AI security teams and developers.`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
+
+  // =============================================================================
+  // AI Asset Discovery Scanner
+  // =============================================================================
+  'ai-asset-discovery-scanner': {
+    id: 'ai-asset-discovery-scanner',
+    name: 'AI Asset Discovery Scanner',
+    description: 'Comprehensive AI usage detection across repositories - finds AI models, agents, MCPs, and APIs',
+    category: 'Security',
+    tags: ['security', 'ai-detection', 'github', 'compliance'],
+    difficulty: 'intermediate',
+    estimatedTime: '5-8 minutes',
+    nodes: [
+      {
+        id: 'start',
+        type: 'start',
+        position: { x: 100, y: 200 },
+        data: {
+          nodeType: 'start',
+          label: 'Start',
+          nodeName: 'Start',
+          inputVariables: [
+            {
+              name: 'owner',
+              type: 'string',
+              required: true,
+              description: 'GitHub organization or username to scan',
+              defaultValue: 'your-org'
+            },
+            {
+              name: 'includePrivate',
+              type: 'boolean',
+              required: false,
+              description: 'Include private repositories in scan',
+              defaultValue: false
+            }
+          ],
+        },
+      },
+      {
+        id: 'list-repos',
+        type: 'mcp',
+        position: { x: 400, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'List Repositories',
+          nodeName: 'List Repositories',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'list_repositories',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            type: 'all',
+            sort: 'updated',
+            direction: 'desc',
+            perPage: 50
+          }
+        },
+      },
+      {
+        id: 'while-loop',
+        type: 'while',
+        position: { x: 700, y: 200 },
+        data: {
+          nodeType: 'while',
+          label: 'Scan Each Repo',
+          nodeName: 'Scan Each Repo',
+          whileCondition: 'iteration <= state.variables.repositories.length',
+          maxIterations: 50
+        },
+      },
+      {
+        id: 'search-ai-patterns',
+        type: 'mcp',
+        position: { x: 1000, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Search AI Patterns',
+          nodeName: 'Search AI Patterns',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'search_code',
+          mcpParams: {
+            query: 'openai OR anthropic OR gpt- OR claude- OR gemini- OR langchain OR llamaindex OR transformers OR mcp:// OR mcp-server',
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}'
+          }
+        },
+      },
+      {
+        id: 'analyze-findings',
+        type: 'agent',
+        position: { x: 1300, y: 200 },
+        data: {
+          nodeType: 'agent',
+          label: 'Analyze AI Findings',
+          nodeName: 'Analyze AI Findings',
+          instructions: 'Analyze the GitHub search results and categorize AI usage patterns. Identify:\n1. AI models being used (OpenAI, Anthropic, Google, etc.)\n2. AI frameworks (LangChain, LlamaIndex, Transformers)\n3. MCP servers and integrations\n4. Risk level of each finding\n5. Compliance status\n\nProvide a structured analysis with risk assessment.',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
+          outputFormat: 'JSON'
+        },
+      },
+      {
+        id: 'generate-report',
+        type: 'transform',
+        position: { x: 1600, y: 200 },
+        data: {
+          nodeType: 'transform',
+          label: 'Generate AI Inventory',
+          nodeName: 'Generate AI Inventory',
+          transformScript: `
+            const findings = lastOutput;
+            const repo = state.variables.repositories[iteration-1];
+            
+            return {
+              repository: repo.name,
+              url: repo.html_url,
+              aiFindings: findings,
+              scanDate: new Date().toISOString(),
+              riskLevel: findings.riskLevel || 'medium'
+            };
+          `
+        },
+      },
+      {
+        id: 'end',
+        type: 'end',
+        position: { x: 1900, y: 200 },
+        data: {
+          nodeType: 'end',
+          label: 'End',
+          nodeName: 'End',
+        },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'start', target: 'list-repos' },
+      { id: 'e2', source: 'list-repos', target: 'while-loop' },
+      { id: 'e3', source: 'while-loop', target: 'search-ai-patterns' },
+      { id: 'e4', source: 'search-ai-patterns', target: 'analyze-findings' },
+      { id: 'e5', source: 'analyze-findings', target: 'generate-report' },
+      { id: 'e6', source: 'generate-report', target: 'end' },
+      { id: 'e7', source: 'while-loop', target: 'while-loop', sourceHandle: 'loop' }
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+
+  // =============================================================================
+  // Shadow AI Detection System
+  // =============================================================================
+  'shadow-ai-detection-system': {
+    id: 'shadow-ai-detection-system',
+    name: 'Shadow AI Detection System',
+    description: 'Find unauthorized AI usage across repositories and create security issues for violations',
+    category: 'Security',
+    tags: ['security', 'shadow-ai', 'compliance', 'github'],
+    difficulty: 'intermediate',
+    estimatedTime: '6-10 minutes',
+    nodes: [
+      {
+        id: 'start',
+        type: 'start',
+        position: { x: 100, y: 200 },
+        data: {
+          nodeType: 'start',
+          label: 'Start',
+          nodeName: 'Start',
+          inputVariables: [
+            {
+              name: 'owner',
+              type: 'string',
+              required: true,
+              description: 'GitHub organization to scan',
+              defaultValue: 'your-org'
+            },
+            {
+              name: 'approvedAIList',
+              type: 'string',
+              required: false,
+              description: 'Comma-separated list of approved AI services',
+              defaultValue: 'openai,anthropic'
+            }
+          ],
+        },
+      },
+      {
+        id: 'list-repos',
+        type: 'mcp',
+        position: { x: 400, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'List Repositories',
+          nodeName: 'List Repositories',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'list_repositories',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            type: 'all',
+            sort: 'updated',
+            direction: 'desc',
+            perPage: 30
+          }
+        },
+      },
+      {
+        id: 'while-loop',
+        type: 'while',
+        position: { x: 700, y: 200 },
+        data: {
+          nodeType: 'while',
+          label: 'Scan Each Repo',
+          nodeName: 'Scan Each Repo',
+          whileCondition: 'iteration <= state.variables.repositories.length',
+          maxIterations: 30
+        },
+      },
+      {
+        id: 'search-unauthorized-ai',
+        type: 'mcp',
+        position: { x: 1000, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Search Unauthorized AI',
+          nodeName: 'Search Unauthorized AI',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'search_code',
+          mcpParams: {
+            query: 'api.openai.com OR api.anthropic.com OR api.groq.com OR generativelanguage.googleapis.com OR huggingface.co OR replicate.com',
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}'
+          }
+        },
+      },
+      {
+        id: 'identify-violations',
+        type: 'agent',
+        position: { x: 1300, y: 200 },
+        data: {
+          nodeType: 'agent',
+          label: 'Identify Violations',
+          nodeName: 'Identify Violations',
+          instructions: 'Analyze the search results to identify unauthorized AI usage. Compare against the approved AI list: {{input.approvedAIList}}. Flag any AI services not in the approved list as violations. Provide detailed analysis of each violation including:\n1. AI service being used\n2. Location in code\n3. Risk level\n4. Recommended action\n\nReturn structured violation report.',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
+          outputFormat: 'JSON'
+        },
+      },
+      {
+        id: 'check-violations',
+        type: 'if-else',
+        position: { x: 1600, y: 200 },
+        data: {
+          nodeType: 'if-else',
+          label: 'Check Violations',
+          nodeName: 'Check Violations',
+          condition: 'lastOutput.violations && lastOutput.violations.length > 0',
+          trueLabel: 'Create Issue',
+          falseLabel: 'No Violations'
+        },
+      },
+      {
+        id: 'create-security-issue',
+        type: 'mcp',
+        position: { x: 1900, y: 100 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Create Security Issue',
+          nodeName: 'Create Security Issue',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'create_issue',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}',
+            title: '🚨 Shadow AI Detection: Unauthorized AI Usage Found',
+            body: '## Shadow AI Violation Detected\n\n**Repository:** {{state.variables.repositories[iteration-1].name}}\n**Scan Date:** {{new Date().toISOString()}}\n\n### Violations Found:\n{{lastOutput.violations}}\n\n### Recommended Actions:\n1. Review and approve AI usage\n2. Update security policies\n3. Remove unauthorized AI integrations\n\n**Labels:** security, shadow-ai, violation',
+            labels: ['security', 'shadow-ai', 'violation']
+          }
+        },
+      },
+      {
+        id: 'generate-report',
+        type: 'transform',
+        position: { x: 1900, y: 300 },
+        data: {
+          nodeType: 'transform',
+          label: 'Generate Report',
+          nodeName: 'Generate Report',
+          transformScript: `
+            const repo = state.variables.repositories[iteration-1];
+            const violations = lastOutput.violations || [];
+            
+            return {
+              repository: repo.name,
+              url: repo.html_url,
+              violations: violations,
+              violationCount: violations.length,
+              scanDate: new Date().toISOString(),
+              status: violations.length > 0 ? 'VIOLATIONS_FOUND' : 'CLEAN'
+            };
+          `
+        },
+      },
+      {
+        id: 'end',
+        type: 'end',
+        position: { x: 2200, y: 200 },
+        data: {
+          nodeType: 'end',
+          label: 'End',
+          nodeName: 'End',
+        },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'start', target: 'list-repos' },
+      { id: 'e2', source: 'list-repos', target: 'while-loop' },
+      { id: 'e3', source: 'while-loop', target: 'search-unauthorized-ai' },
+      { id: 'e4', source: 'search-unauthorized-ai', target: 'identify-violations' },
+      { id: 'e5', source: 'identify-violations', target: 'check-violations' },
+      { id: 'e6', source: 'check-violations', target: 'create-security-issue', sourceHandle: 'if' },
+      { id: 'e7', source: 'check-violations', target: 'generate-report', sourceHandle: 'else' },
+      { id: 'e8', source: 'create-security-issue', target: 'generate-report' },
+      { id: 'e9', source: 'generate-report', target: 'end' },
+      { id: 'e10', source: 'while-loop', target: 'while-loop', sourceHandle: 'loop' }
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+
+  // =============================================================================
+  // AI Security Compliance Checker
+  // =============================================================================
+  'ai-security-compliance-checker': {
+    id: 'ai-security-compliance-checker',
+    name: 'AI Security Compliance Checker',
+    description: 'Ensure AI usage meets security standards and compliance requirements',
+    category: 'Security',
+    tags: ['security', 'compliance', 'ai-governance', 'github'],
+    difficulty: 'intermediate',
+    estimatedTime: '5-7 minutes',
+    nodes: [
+      {
+        id: 'start',
+        type: 'start',
+        position: { x: 100, y: 200 },
+        data: {
+          nodeType: 'start',
+          label: 'Start',
+          nodeName: 'Start',
+          inputVariables: [
+            {
+              name: 'owner',
+              type: 'string',
+              required: true,
+              description: 'GitHub organization to check',
+              defaultValue: 'your-org'
+            },
+            {
+              name: 'complianceRules',
+              type: 'string',
+              required: false,
+              description: 'Compliance rules and requirements',
+              defaultValue: 'No AI usage without approval, No sensitive data in AI calls, All AI usage must be documented'
+            }
+          ],
+        },
+      },
+      {
+        id: 'list-repos',
+        type: 'mcp',
+        position: { x: 400, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'List Repositories',
+          nodeName: 'List Repositories',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'list_repositories',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            type: 'all',
+            sort: 'updated',
+            direction: 'desc',
+            perPage: 20
+          }
+        },
+      },
+      {
+        id: 'check-security-advisories',
+        type: 'mcp',
+        position: { x: 700, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Check Security Advisories',
+          nodeName: 'Check Security Advisories',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'list_global_security_advisories',
+          mcpParams: {
+            ecosystem: 'npm',
+            severity: 'high',
+            perPage: 20
+          }
+        },
+      },
+      {
+        id: 'search-ai-usage',
+        type: 'mcp',
+        position: { x: 1000, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Search AI Usage',
+          nodeName: 'Search AI Usage',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'search_code',
+          mcpParams: {
+            query: 'openai OR anthropic OR gpt- OR claude- OR gemini- OR langchain OR llamaindex',
+            owner: '{{input.owner}}'
+          }
+        },
+      },
+      {
+        id: 'assess-compliance',
+        type: 'agent',
+        position: { x: 1300, y: 200 },
+        data: {
+          nodeType: 'agent',
+          label: 'Assess Compliance',
+          nodeName: 'Assess Compliance',
+          instructions: 'Assess AI usage compliance against the provided rules: {{input.complianceRules}}. Analyze:\n1. AI usage patterns found\n2. Security advisories related to AI\n3. Compliance with each rule\n4. Risk assessment\n5. Recommendations for improvement\n\nProvide detailed compliance report with scores and recommendations.',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
+          outputFormat: 'JSON'
+        },
+      },
+      {
+        id: 'check-compliance-status',
+        type: 'if-else',
+        position: { x: 1600, y: 200 },
+        data: {
+          nodeType: 'if-else',
+          label: 'Check Compliance',
+          nodeName: 'Check Compliance',
+          condition: 'lastOutput.complianceScore < 80',
+          trueLabel: 'Non-Compliant',
+          falseLabel: 'Compliant'
+        },
+      },
+      {
+        id: 'create-compliance-issue',
+        type: 'mcp',
+        position: { x: 1900, y: 100 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Create Compliance Issue',
+          nodeName: 'Create Compliance Issue',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'create_issue',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[0].name}}',
+            title: '⚠️ AI Compliance Violation: Security Standards Not Met',
+            body: '## AI Compliance Violation\n\n**Organization:** {{input.owner}}\n**Scan Date:** {{new Date().toISOString()}}\n**Compliance Score:** {{lastOutput.complianceScore}}%\n\n### Violations Found:\n{{lastOutput.violations}}\n\n### Recommendations:\n{{lastOutput.recommendations}}\n\n**Labels:** security, compliance, ai-governance',
+            labels: ['security', 'compliance', 'ai-governance']
+          }
+        },
+      },
+      {
+        id: 'generate-compliance-report',
+        type: 'transform',
+        position: { x: 1900, y: 300 },
+        data: {
+          nodeType: 'transform',
+          label: 'Generate Compliance Report',
+          nodeName: 'Generate Compliance Report',
+          transformScript: `
+            return {
+              organization: input.owner,
+              complianceScore: lastOutput.complianceScore,
+              violations: lastOutput.violations,
+              recommendations: lastOutput.recommendations,
+              scanDate: new Date().toISOString(),
+              status: lastOutput.complianceScore >= 80 ? 'COMPLIANT' : 'NON_COMPLIANT'
+            };
+          `
+        },
+      },
+      {
+        id: 'end',
+        type: 'end',
+        position: { x: 2200, y: 200 },
+        data: {
+          nodeType: 'end',
+          label: 'End',
+          nodeName: 'End',
+        },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'start', target: 'list-repos' },
+      { id: 'e2', source: 'list-repos', target: 'check-security-advisories' },
+      { id: 'e3', source: 'check-security-advisories', target: 'search-ai-usage' },
+      { id: 'e4', source: 'search-ai-usage', target: 'assess-compliance' },
+      { id: 'e5', source: 'assess-compliance', target: 'check-compliance-status' },
+      { id: 'e6', source: 'check-compliance-status', target: 'create-compliance-issue', sourceHandle: 'if' },
+      { id: 'e7', source: 'check-compliance-status', target: 'generate-compliance-report', sourceHandle: 'else' },
+      { id: 'e8', source: 'create-compliance-issue', target: 'generate-compliance-report' },
+      { id: 'e9', source: 'generate-compliance-report', target: 'end' }
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+
+  // =============================================================================
+  // AI Data Exposure Scanner
+  // =============================================================================
+  'ai-data-exposure-scanner': {
+    id: 'ai-data-exposure-scanner',
+    name: 'AI Data Exposure Scanner',
+    description: 'Detect sensitive data being sent to AI services and assess exposure risks',
+    category: 'Security',
+    tags: ['security', 'data-protection', 'privacy', 'ai-safety'],
+    difficulty: 'advanced',
+    estimatedTime: '6-9 minutes',
+    nodes: [
+      {
+        id: 'start',
+        type: 'start',
+        position: { x: 100, y: 200 },
+        data: {
+          nodeType: 'start',
+          label: 'Start',
+          nodeName: 'Start',
+          inputVariables: [
+            {
+              name: 'owner',
+              type: 'string',
+              required: true,
+              description: 'GitHub organization to scan',
+              defaultValue: 'your-org'
+            },
+            {
+              name: 'sensitiveDataTypes',
+              type: 'string',
+              required: false,
+              description: 'Types of sensitive data to detect (PII, PHI, credentials, etc.)',
+              defaultValue: 'PII,PHI,credentials,api-keys,passwords'
+            }
+          ],
+        },
+      },
+      {
+        id: 'list-repos',
+        type: 'mcp',
+        position: { x: 400, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'List Repositories',
+          nodeName: 'List Repositories',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'list_repositories',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            type: 'all',
+            sort: 'updated',
+            direction: 'desc',
+            perPage: 25
+          }
+        },
+      },
+      {
+        id: 'while-loop',
+        type: 'while',
+        position: { x: 700, y: 200 },
+        data: {
+          nodeType: 'while',
+          label: 'Scan Each Repo',
+          nodeName: 'Scan Each Repo',
+          whileCondition: 'iteration <= state.variables.repositories.length',
+          maxIterations: 25
+        },
+      },
+      {
+        id: 'search-sensitive-data',
+        type: 'mcp',
+        position: { x: 1000, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Search Sensitive Data',
+          nodeName: 'Search Sensitive Data',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'search_code',
+          mcpParams: {
+            query: 'api.openai.com OR api.anthropic.com OR api.groq.com OR generativelanguage.googleapis.com',
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}'
+          }
+        },
+      },
+      {
+        id: 'analyze-data-exposure',
+        type: 'agent',
+        position: { x: 1300, y: 200 },
+        data: {
+          nodeType: 'agent',
+          label: 'Analyze Data Exposure',
+          nodeName: 'Analyze Data Exposure',
+          instructions: 'Analyze the code for sensitive data exposure to AI services. Look for:\n1. PII (Personal Identifiable Information)\n2. PHI (Protected Health Information)\n3. Credentials and API keys\n4. Financial data\n5. Intellectual property\n\nAssess the risk level of each exposure and provide recommendations for data protection.',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
+          outputFormat: 'JSON'
+        },
+      },
+      {
+        id: 'check-exposure-risk',
+        type: 'if-else',
+        position: { x: 1600, y: 200 },
+        data: {
+          nodeType: 'if-else',
+          label: 'Check Exposure Risk',
+          nodeName: 'Check Exposure Risk',
+          condition: 'lastOutput.riskLevel === "high" || lastOutput.riskLevel === "critical"',
+          trueLabel: 'High Risk',
+          falseLabel: 'Low Risk'
+        },
+      },
+      {
+        id: 'create-security-issue',
+        type: 'mcp',
+        position: { x: 1900, y: 100 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Create Security Issue',
+          nodeName: 'Create Security Issue',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'create_issue',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}',
+            title: '🚨 Data Exposure Risk: Sensitive Data in AI Calls',
+            body: '## Data Exposure Risk Detected\n\n**Repository:** {{state.variables.repositories[iteration-1].name}}\n**Risk Level:** {{lastOutput.riskLevel}}\n**Scan Date:** {{new Date().toISOString()}}\n\n### Exposed Data Types:\n{{lastOutput.exposedDataTypes}}\n\n### Recommendations:\n{{lastOutput.recommendations}}\n\n**Labels:** security, data-exposure, privacy',
+            labels: ['security', 'data-exposure', 'privacy']
+          }
+        },
+      },
+      {
+        id: 'generate-exposure-report',
+        type: 'transform',
+        position: { x: 1900, y: 300 },
+        data: {
+          nodeType: 'transform',
+          label: 'Generate Exposure Report',
+          nodeName: 'Generate Exposure Report',
+          transformScript: `
+            const repo = state.variables.repositories[iteration-1];
+            
+            return {
+              repository: repo.name,
+              url: repo.html_url,
+              riskLevel: lastOutput.riskLevel,
+              exposedDataTypes: lastOutput.exposedDataTypes,
+              recommendations: lastOutput.recommendations,
+              scanDate: new Date().toISOString(),
+              status: lastOutput.riskLevel === 'high' || lastOutput.riskLevel === 'critical' ? 'HIGH_RISK' : 'LOW_RISK'
+            };
+          `
+        },
+      },
+      {
+        id: 'end',
+        type: 'end',
+        position: { x: 2200, y: 200 },
+        data: {
+          nodeType: 'end',
+          label: 'End',
+          nodeName: 'End',
+        },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'start', target: 'list-repos' },
+      { id: 'e2', source: 'list-repos', target: 'while-loop' },
+      { id: 'e3', source: 'while-loop', target: 'search-sensitive-data' },
+      { id: 'e4', source: 'search-sensitive-data', target: 'analyze-data-exposure' },
+      { id: 'e5', source: 'analyze-data-exposure', target: 'check-exposure-risk' },
+      { id: 'e6', source: 'check-exposure-risk', target: 'create-security-issue', sourceHandle: 'if' },
+      { id: 'e7', source: 'check-exposure-risk', target: 'generate-exposure-report', sourceHandle: 'else' },
+      { id: 'e8', source: 'create-security-issue', target: 'generate-exposure-report' },
+      { id: 'e9', source: 'generate-exposure-report', target: 'end' },
+      { id: 'e10', source: 'while-loop', target: 'while-loop', sourceHandle: 'loop' }
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+
+  // =============================================================================
+  // Comprehensive AI Security Audit
+  // =============================================================================
+  'comprehensive-ai-security-audit': {
+    id: 'comprehensive-ai-security-audit',
+    name: 'Comprehensive AI Security Audit',
+    description: 'Complete AI security assessment combining all detection methods for comprehensive audit',
+    category: 'Security',
+    tags: ['security', 'audit', 'ai-governance', 'compliance', 'comprehensive'],
+    difficulty: 'advanced',
+    estimatedTime: '10-15 minutes',
+    nodes: [
+      {
+        id: 'start',
+        type: 'start',
+        position: { x: 100, y: 200 },
+        data: {
+          nodeType: 'start',
+          label: 'Start',
+          nodeName: 'Start',
+          inputVariables: [
+            {
+              name: 'owner',
+              type: 'string',
+              required: true,
+              description: 'GitHub organization to audit',
+              defaultValue: 'your-org'
+            },
+            {
+              name: 'complianceRules',
+              type: 'string',
+              required: false,
+              description: 'Compliance rules and requirements',
+              defaultValue: 'No unauthorized AI usage, No sensitive data in AI calls, All AI usage must be documented and approved'
+            }
+          ],
+        },
+      },
+      {
+        id: 'list-repos',
+        type: 'mcp',
+        position: { x: 400, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'List Repositories',
+          nodeName: 'List Repositories',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'list_repositories',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            type: 'all',
+            sort: 'updated',
+            direction: 'desc',
+            perPage: 30
+          }
+        },
+      },
+      {
+        id: 'check-security-advisories',
+        type: 'mcp',
+        position: { x: 700, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Check Security Advisories',
+          nodeName: 'Check Security Advisories',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'list_global_security_advisories',
+          mcpParams: {
+            ecosystem: 'npm',
+            severity: 'high',
+            perPage: 20
+          }
+        },
+      },
+      {
+        id: 'while-loop',
+        type: 'while',
+        position: { x: 1000, y: 200 },
+        data: {
+          nodeType: 'while',
+          label: 'Audit Each Repo',
+          nodeName: 'Audit Each Repo',
+          whileCondition: 'iteration <= state.variables.repositories.length',
+          maxIterations: 30
+        },
+      },
+      {
+        id: 'search-ai-assets',
+        type: 'mcp',
+        position: { x: 1300, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Search AI Assets',
+          nodeName: 'Search AI Assets',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'search_code',
+          mcpParams: {
+            query: 'openai OR anthropic OR gpt- OR claude- OR gemini- OR langchain OR llamaindex OR transformers OR mcp:// OR mcp-server',
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}'
+          }
+        },
+      },
+      {
+        id: 'search-shadow-ai',
+        type: 'mcp',
+        position: { x: 1600, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Search Shadow AI',
+          nodeName: 'Search Shadow AI',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'search_code',
+          mcpParams: {
+            query: 'api.openai.com OR api.anthropic.com OR api.groq.com OR generativelanguage.googleapis.com OR huggingface.co OR replicate.com',
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}'
+          }
+        },
+      },
+      {
+        id: 'search-data-exposure',
+        type: 'mcp',
+        position: { x: 1900, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Search Data Exposure',
+          nodeName: 'Search Data Exposure',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'search_code',
+          mcpParams: {
+            query: 'api.openai.com OR api.anthropic.com OR api.groq.com OR generativelanguage.googleapis.com',
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[iteration-1].name}}'
+          }
+        },
+      },
+      {
+        id: 'comprehensive-analysis',
+        type: 'agent',
+        position: { x: 2200, y: 200 },
+        data: {
+          nodeType: 'agent',
+          label: 'Comprehensive Analysis',
+          nodeName: 'Comprehensive Analysis',
+          instructions: 'Perform comprehensive AI security analysis combining all findings:\n\n1. **AI Asset Discovery**: Analyze found AI models, frameworks, and integrations\n2. **Shadow AI Detection**: Identify unauthorized AI usage\n3. **Data Exposure Analysis**: Assess sensitive data in AI calls\n4. **Compliance Assessment**: Check against rules: {{input.complianceRules}}\n5. **Security Advisories**: Review related security issues\n\nProvide executive summary with:\n- Overall security score\n- Critical findings\n- Risk assessment\n- Recommendations\n- Action items',
+          model: 'anthropic/claude-sonnet-4-5-20250929',
+          outputFormat: 'JSON'
+        },
+      },
+      {
+        id: 'generate-executive-summary',
+        type: 'transform',
+        position: { x: 2500, y: 200 },
+        data: {
+          nodeType: 'transform',
+          label: 'Generate Executive Summary',
+          nodeName: 'Generate Executive Summary',
+          transformScript: `
+            const repo = state.variables.repositories[iteration-1];
+            const analysis = lastOutput;
+            
+            return {
+              repository: repo.name,
+              url: repo.html_url,
+              securityScore: analysis.securityScore,
+              aiAssets: analysis.aiAssets,
+              shadowAI: analysis.shadowAI,
+              dataExposure: analysis.dataExposure,
+              compliance: analysis.compliance,
+              recommendations: analysis.recommendations,
+              riskLevel: analysis.riskLevel,
+              scanDate: new Date().toISOString()
+            };
+          `
+        },
+      },
+      {
+        id: 'create-master-issue',
+        type: 'mcp',
+        position: { x: 2800, y: 200 },
+        data: {
+          nodeType: 'mcp',
+          label: 'Create Master Issue',
+          nodeName: 'Create Master Issue',
+            mcpTools: [
+              {
+                name: 'GitHub',
+                url: 'https://api.github.com',
+                authType: 'api-key',
+                label: 'GitHub',
+              }
+            ],
+          mcpAction: 'create_issue',
+          mcpParams: {
+            owner: '{{input.owner}}',
+            repo: '{{state.variables.repositories[0].name}}',
+            title: '🔍 Comprehensive AI Security Audit Report',
+            body: '## AI Security Audit Report\n\n**Organization:** {{input.owner}}\n**Audit Date:** {{new Date().toISOString()}}\n**Security Score:** {{lastOutput.securityScore}}%\n\n### Executive Summary\n{{lastOutput.executiveSummary}}\n\n### Key Findings\n- **AI Assets:** {{lastOutput.aiAssets.length}} found\n- **Shadow AI:** {{lastOutput.shadowAI.length}} violations\n- **Data Exposure:** {{lastOutput.dataExposure.length}} risks\n- **Compliance:** {{lastOutput.compliance.score}}%\n\n### Recommendations\n{{lastOutput.recommendations}}\n\n**Labels:** security, audit, ai-governance',
+            labels: ['security', 'audit', 'ai-governance']
+          }
+        },
+      },
+      {
+        id: 'end',
+        type: 'end',
+        position: { x: 3100, y: 200 },
+        data: {
+          nodeType: 'end',
+          label: 'End',
+          nodeName: 'End',
+        },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'start', target: 'list-repos' },
+      { id: 'e2', source: 'list-repos', target: 'check-security-advisories' },
+      { id: 'e3', source: 'check-security-advisories', target: 'while-loop' },
+      { id: 'e4', source: 'while-loop', target: 'search-ai-assets' },
+      { id: 'e5', source: 'search-ai-assets', target: 'search-shadow-ai' },
+      { id: 'e6', source: 'search-shadow-ai', target: 'search-data-exposure' },
+      { id: 'e7', source: 'search-data-exposure', target: 'comprehensive-analysis' },
+      { id: 'e8', source: 'comprehensive-analysis', target: 'generate-executive-summary' },
+      { id: 'e9', source: 'generate-executive-summary', target: 'create-master-issue' },
+      { id: 'e10', source: 'create-master-issue', target: 'end' },
+      { id: 'e11', source: 'while-loop', target: 'while-loop', sourceHandle: 'loop' }
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 };
 
 export function getTemplate(templateId: string): Workflow | null {

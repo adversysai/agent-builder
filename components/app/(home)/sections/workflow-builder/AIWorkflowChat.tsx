@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Bot, User, Loader2, CheckCircle, AlertCircle, Eye, Download, Sparkles, MessageSquare, Trash2, Globe, BarChart3, ShoppingCart, Calendar, Heart, Braces } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, CheckCircle, AlertCircle, Eye, Download, Sparkles, MessageSquare, Trash2, Globe, BarChart3, ShoppingCart, Calendar, Heart, Braces, ChevronDown, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { Workflow } from '@/lib/workflow/types';
 
@@ -44,8 +44,21 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<any[]>([]);
+  const [selectedModel, setSelectedModel] = useState('auto');
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Available models for workflow generation
+  const availableModels = [
+    { id: 'auto', name: 'Auto (Best Available)', description: 'Automatically select the best available model' },
+    { id: 'openai', name: 'OpenAI GPT-4o', description: 'Best for analysis and reasoning tasks' },
+    { id: 'anthropic', name: 'Anthropic Claude', description: 'Best for complex workflows with MCP tools' },
+    { id: 'google', name: 'Google Gemini', description: 'Best for large context and multilingual tasks' },
+    { id: 'groq', name: 'Groq (Fastest)', description: 'Fastest response times' },
+  ];
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -75,6 +88,23 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
+
+  // Handle click outside to close model dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
+        setShowModelDropdown(false);
+      }
+    };
+
+    if (showModelDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showModelDropdown]);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isGenerating) return;
@@ -106,6 +136,7 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
           prompt: input.trim(),
           conversationHistory: conversationHistory,
           currentWorkflow: currentWorkflow,
+          preferredModel: selectedModel, // Pass the selected model
         }),
       });
 
@@ -148,7 +179,24 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
         throw new Error(errorMessage);
       }
 
-      const responseContent = data.workflow ? 'I\'ve generated a workflow for you! You can preview, apply, or download it.' : 'I couldn\'t generate a workflow from your request. Please try rephrasing your request.';
+      // Handle conversational responses vs workflow generation
+      let responseContent: string;
+      let workflow: Workflow | undefined;
+      
+      if (data.isConversational) {
+        // This is a conversational response (like "hi" -> "Hello! I'm here to help...")
+        responseContent = data.message;
+        workflow = undefined;
+      } else if (data.workflow) {
+        // This is a workflow generation response
+        responseContent = 'I\'ve generated a workflow for you! You can preview, apply, or download it.';
+        workflow = data.workflow;
+      } else {
+        // Fallback for unexpected responses
+        responseContent = 'I couldn\'t generate a workflow from your request. Please try rephrasing your request.';
+        workflow = undefined;
+      }
+      
       const outputTokens = estimateTokenCount(responseContent);
       const totalTokens = inputTokens + outputTokens;
 
@@ -157,7 +205,7 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
         role: 'assistant',
         content: responseContent,
         timestamp: new Date(),
-        workflow: data.workflow,
+        workflow: workflow,
         thinking: data.thinking,
         tokenCount: {
           input: inputTokens,
@@ -532,7 +580,13 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
                         <div className="mt-12 p-12 bg-heat-4 bg-opacity-10 border border-heat-100 border-opacity-20 rounded-12 text-heat-100 text-xs">
                           <div className="flex items-center gap-8 mb-8">
                             <Bot className="w-3 h-3" />
-                            <span className="font-medium">Claude's Thinking</span>
+                            <span className="font-medium">
+                              {(() => {
+                                const model = availableModels.find(m => m.id === selectedModel);
+                                const modelName = model?.name || 'AI';
+                                return `${modelName}'s Thinking`;
+                              })()}
+                            </span>
                           </div>
                           <p className="text-xs whitespace-pre-wrap leading-relaxed" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>{message.thinking}</p>
                         </div>
@@ -603,7 +657,11 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
                       <div className="flex items-center gap-8">
                         <Loader2 className="w-3 h-3 animate-spin text-heat-100" />
                         <span className="text-sm text-accent-black font-medium">
-                          Claude is designing your workflow...
+                          {(() => {
+                            const model = availableModels.find(m => m.id === selectedModel);
+                            const modelName = model?.name || 'AI';
+                            return `${modelName} is designing your workflow...`;
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -614,8 +672,87 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
               <div ref={messagesEndRef} />
             </div>
 
+
             {/* Input */}
             <div className="p-16 border-t border-border-faint bg-accent-white" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
+              {/* Model Selector */}
+              <div className="mb-12 flex items-center justify-between">
+                <div className="flex items-center gap-8">
+                  <Settings className="w-4 h-4 text-black-alpha-48" />
+                  <span className="text-xs text-black-alpha-48 font-medium">Model:</span>
+                </div>
+                <div className="relative" ref={modelDropdownRef}>
+                  <button
+                    onClick={() => {
+                      setShowModelDropdown(!showModelDropdown);
+                      if (!showModelDropdown) {
+                        setHoveredModel(selectedModel);
+                      }
+                    }}
+                    className="flex items-center gap-6 px-8 py-4 bg-background-base border border-border-faint rounded-8 hover:border-heat-100 transition-colors text-xs shadow-sm"
+                  >
+                    <span className="text-accent-black">
+                      {availableModels.find(m => m.id === selectedModel)?.name || 'Auto (Best Available)'}
+                    </span>
+                    <ChevronDown className={`w-3 h-3 text-black-alpha-48 transition-transform ${showModelDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showModelDropdown && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute bottom-full right-0 mb-4 w-[480px] flex bg-accent-white border border-border-faint rounded-12 shadow-lg z-50 overflow-hidden"
+                      >
+                        {/* Model List Panel */}
+                        <div className="flex-1">
+                          <div className="px-12 py-6 text-xs text-black-alpha-48 border-b border-border-faint">
+                            * to switch models
+                          </div>
+                          {availableModels.map((model) => (
+                            <button
+                              key={model.id}
+                              onClick={() => {
+                                setSelectedModel(model.id);
+                                setShowModelDropdown(false);
+                              }}
+                              onMouseEnter={() => setHoveredModel(model.id)}
+                              onMouseLeave={() => setHoveredModel(selectedModel)}
+                              className={`w-full text-left px-12 py-8 hover:bg-heat-4 hover:bg-opacity-10 transition-colors flex items-center justify-between ${
+                                selectedModel === model.id ? 'bg-heat-4 bg-opacity-10' : ''
+                              }`}
+                            >
+                              <div className="flex-1">
+                                <div className="text-xs font-medium text-accent-black">
+                                  {model.name}
+                                </div>
+                              </div>
+                              {selectedModel === model.id && (
+                                <div className="w-4 h-4 rounded-full bg-heat-100 flex items-center justify-center">
+                                  <CheckCircle className="w-3 h-3 text-white" />
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                        
+                        {/* Description Panel */}
+                        <div className="w-48 bg-background-lighter border-l border-border-faint p-12">
+                          <div className="text-xs font-medium text-accent-black mb-8">
+                            {hoveredModel ? availableModels.find(m => m.id === hoveredModel)?.name : 'Select a model'}
+                          </div>
+                          <div className="text-xs text-black-alpha-48 leading-relaxed">
+                            {hoveredModel ? availableModels.find(m => m.id === hoveredModel)?.description : 'Hover over a model to see its description and best use cases.'}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
               <div className="relative bg-background-base border border-border-faint rounded-12 shadow-sm">
                 <textarea
                   ref={inputRef}

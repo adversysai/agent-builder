@@ -469,8 +469,12 @@ export default function ToolsNodePanel({ node, onClose, onDelete, onUpdate }: To
                         className="w-full px-12 py-10 bg-background-base border border-border-faint rounded-8 text-body-medium text-accent-black focus:outline-none focus:border-heat-100 transition-colors cursor-pointer"
                       >
                         <optgroup label="OpenAI (Recommended)">
-                          <option value="openai/gpt-5-mini">GPT-5 Mini (Fast & Cheap)</option>
-                          <option value="openai/gpt-5">GPT-5</option>
+                          <option value="openai/gpt-4o-mini">GPT-4o Mini (Fast & Cheap)</option>
+                          <option value="openai/gpt-4o">GPT-4o</option>
+                        </optgroup>
+                        <optgroup label="Google">
+                          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Fast)</option>
+                          <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
                         </optgroup>
                         <optgroup label="Groq (Fastest)">
                           <option value="groq/openai/gpt-oss-20b">GPT OSS 20B</option>

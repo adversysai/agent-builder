@@ -135,6 +135,27 @@ export const officialMCPServers: MCPServerConfig[] = [
     official: true,
     documentation: 'https://www.coingecko.com/api/documentation',
   },
+  {
+    id: 'github',
+    name: 'GitHub',
+    description: 'GitHub repository management, code search, and security analysis',
+    url: 'https://api.github.com',
+    authType: 'api-key',
+    apiKeyPlaceholder: 'GITHUB_TOKEN',
+    tools: [
+      'search_code',
+      'list_repositories',
+      'get_repository_content',
+      'list_global_security_advisories',
+      'list_repository_security_advisories',
+      'create_issue',
+      'add_issue_comment'
+    ],
+    category: 'productivity',
+    enabled: true,
+    official: true,
+    documentation: 'https://github.com/github/github-mcp-server'
+  },
 ];
 
 /**

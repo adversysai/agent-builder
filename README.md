@@ -451,9 +451,11 @@ flowchart TD
     D1["Firecrawl API"]
     D2["LLMs (Claude, gpt-5, Groq)"]
     D3["MCP Servers"]
+    D4["GitHub API"]
     C_desc --> D1
     C_desc --> D2
     C_desc --> D3
+    C_desc --> D4
   end
 
   D_common["Convex Database"]

@@ -37,6 +37,8 @@ export async function POST(
       firecrawl: process.env.FIRECRAWL_API_KEY,
       arcade: process.env.ARCADE_API_KEY,
       tavily: process.env.TAVILY_API_KEY,
+      github: process.env.GITHUB_TOKEN,
+      google: process.env.GOOGLE_API_KEY,
     };
 
     // Execute workflow using LangGraph

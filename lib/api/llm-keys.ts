@@ -17,7 +17,7 @@ import { db } from "@/lib/database/client";
  * @returns The API key or null if not found
  */
 export async function getLLMApiKey(
-  provider: 'anthropic' | 'openai' | 'groq',
+  provider: 'anthropic' | 'openai' | 'groq' | 'google',
   userId?: string
 ): Promise<string | null> {
   // First, try to get user-specific key if userId is provided
@@ -42,6 +42,7 @@ export async function getLLMApiKey(
     anthropic: 'ANTHROPIC_API_KEY',
     openai: 'OPENAI_API_KEY',
     groq: 'GROQ_API_KEY',
+    google: 'GOOGLE_API_KEY',
   };
 
   const envKey = envKeyMap[provider];
@@ -58,7 +59,7 @@ export async function getLLMApiKey(
  * Check if a provider has an API key configured (either user or env)
  */
 export async function isProviderConfigured(
-  provider: 'anthropic' | 'openai' | 'groq',
+  provider: 'anthropic' | 'openai' | 'groq' | 'google',
   userId?: string
 ): Promise<boolean> {
   const apiKey = await getLLMApiKey(provider, userId);

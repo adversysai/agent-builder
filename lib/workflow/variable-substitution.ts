@@ -23,6 +23,27 @@ export function substituteVariables(text: string, state: WorkflowState): string 
       }
 
       if (typeof value === 'object') {
+        // Special handling for GitHub MCP responses
+        if (expression === 'lastOutput' && value.results && Array.isArray(value.results)) {
+          // Try to extract repository name from GitHub MCP response
+          const githubResult = value.results.find((result: any) => 
+            result.server && result.server.toLowerCase().includes('github')
+          );
+          
+          if (githubResult && githubResult.data && githubResult.data.items) {
+            // Extract repository from search results
+            const firstItem = githubResult.data.items[0];
+            if (firstItem && firstItem.repository) {
+              return firstItem.repository.full_name || firstItem.repository.name;
+            }
+          }
+          
+          // If no repository found, try to extract from error or other data
+          if (githubResult && githubResult.data && githubResult.data.repository) {
+            return githubResult.data.repository.full_name || githubResult.data.repository.name;
+          }
+        }
+        
         return JSON.stringify(value);
       }
 

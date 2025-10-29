@@ -98,6 +98,8 @@ export async function POST(
           firecrawl: process.env.FIRECRAWL_API_KEY, // Firecrawl keys are still environment-only for now
           arcade: process.env.ARCADE_API_KEY,
           tavily: process.env.TAVILY_API_KEY, // Tavily keys are environment-only for now
+          github: process.env.GITHUB_TOKEN, // GitHub token for MCP integration
+          google: (userId ? await getLLMApiKey('google', userId) : undefined) || process.env.GOOGLE_API_KEY, // Google Gemini API key
         };
 
         // Prepare initial input - pass as object if it's an object, otherwise as string

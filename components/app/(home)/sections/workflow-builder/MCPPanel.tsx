@@ -64,6 +64,7 @@ export default function MCPPanel({
       case 'web': return <Globe className="w-16 h-16" />;
       case 'ai': return <Brain className="w-16 h-16" />;
       case 'data': return <Database className="w-16 h-16" />;
+      case 'productivity': return <Package className="w-16 h-16" />;
       default: return <Package className="w-16 h-16" />;
     }
   };

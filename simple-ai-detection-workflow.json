@@ -1,0 +1,119 @@
+{
+  "name": "Simple AI Detection Workflow",
+  "description": "Basic AI usage detection with comprehensive search patterns",
+  "category": "Security",
+  "tags": ["ai-detection", "github", "security"],
+  "difficulty": "beginner",
+  "estimatedTime": "3-5 minutes",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "position": {"x": 100, "y": 400},
+      "data": {
+        "nodeType": "start",
+        "label": "Start",
+        "nodeName": "Start",
+        "inputVariables": [
+          {
+            "name": "repository",
+            "type": "string",
+            "required": true,
+            "description": "Repository in format 'owner/repo' (e.g., 'microsoft/vscode')"
+          }
+        ]
+      }
+    },
+    {
+      "id": "search-ai-usage",
+      "type": "mcp",
+      "position": {"x": 400, "y": 400},
+      "data": {
+        "nodeType": "mcp",
+        "label": "AI Usage Search",
+        "nodeName": "AI Usage Search",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "search_code",
+        "mcpParams": {
+          "query": "(openai OR anthropic OR langchain OR transformers OR torch OR tensorflow OR huggingface OR gpt OR claude OR llm OR ai OR machine learning) repo:{{input.repository}}",
+          "per_page": 100
+        }
+      }
+    },
+    {
+      "id": "search-secrets",
+      "type": "mcp",
+      "position": {"x": 700, "y": 400},
+      "data": {
+        "nodeType": "mcp",
+        "label": "Secrets & Config Search",
+        "nodeName": "Secrets & Config Search",
+        "mcpServers": [
+          {
+            "name": "GitHub",
+            "url": "https://api.github.com",
+            "authType": "api-key",
+            "label": "GitHub"
+          }
+        ],
+        "mcpAction": "search_code",
+        "mcpParams": {
+          "query": "(API_KEY OR api_key OR secret OR token OR password OR credential) repo:{{input.repository}}",
+          "per_page": 50
+        }
+      }
+    },
+    {
+      "id": "ai-analysis",
+      "type": "agent",
+      "position": {"x": 1000, "y": 400},
+      "data": {
+        "nodeType": "agent",
+        "label": "AI Analysis",
+        "nodeName": "AI Analysis",
+        "instructions": "Analyze the GitHub search results and create a comprehensive AI detection report. Include:\n\n1. **Summary**: Overall AI usage found\n2. **AI Technologies**: List all AI frameworks, libraries, and services detected\n3. **Security Issues**: Any exposed API keys, secrets, or credentials\n4. **Files Found**: Specific files containing AI usage\n5. **Recommendations**: Security and best practice recommendations\n\nFormat with clear sections and bullet points.",
+        "model": "anthropic/claude-sonnet-4-5-20250929",
+        "outputFormat": "Text"
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "position": {"x": 1300, "y": 400},
+      "data": {
+        "nodeType": "end",
+        "label": "End",
+        "nodeName": "End"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "search-ai-usage"
+    },
+    {
+      "id": "e2",
+      "source": "search-ai-usage",
+      "target": "search-secrets"
+    },
+    {
+      "id": "e3",
+      "source": "search-secrets",
+      "target": "ai-analysis"
+    },
+    {
+      "id": "e4",
+      "source": "ai-analysis",
+      "target": "end"
+    }
+  ]
+}

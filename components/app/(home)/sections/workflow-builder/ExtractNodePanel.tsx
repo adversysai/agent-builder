@@ -111,8 +111,12 @@ export default function ExtractNodePanel({
                 <option value="anthropic/claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
               </optgroup>
               <optgroup label="OpenAI">
-                <option value="gpt-4o">GPT-5</option>
-                <option value="gpt-4o-mini">GPT-5 Mini</option>
+                <option value="openai/gpt-4o">GPT-4o</option>
+                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+              <optgroup label="Google">
+                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
               </optgroup>
               <optgroup label="Groq">
                 <option value="groq/openai/gpt-oss-120b">GPT OSS 120B</option>
