@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Sparkles } from "lucide-react";
 import VariableReferencePicker from "./VariableReferencePicker";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
@@ -32,6 +32,21 @@ interface NodePanelProps {
   onDelete: (nodeId: string) => void;
   onUpdate: (nodeId: string, data: any) => void;
   onOpenSettings?: () => void; // To open Settings panel for MCP configuration
+  onFixWithAI?: (nodeId: string) => void; // To open Fix With AI panel
+  workflow?: {
+    nodes: any[];
+    edges: any[];
+    name?: string;
+    description?: string;
+  };
+  error?: {
+    message: string;
+    type?: string;
+  };
+  executionContext?: {
+    nodeResults?: Record<string, any>;
+    variables?: Record<string, any>;
+  };
 }
 
 export default function NodePanel({
@@ -42,6 +57,10 @@ export default function NodePanel({
   onDelete,
   onUpdate,
   onOpenSettings,
+  onFixWithAI,
+  workflow,
+  error,
+  executionContext,
 }: NodePanelProps) {
   const { user } = useUser();
 
@@ -419,6 +438,15 @@ export default function NodePanel({
                 placeholder="Enter node name..."
               />
               <div className="flex items-center gap-8">
+                {onFixWithAI && (
+                  <button
+                    onClick={() => onFixWithAI(nodeData?.id || "")}
+                    className="w-32 h-32 rounded-6 hover:bg-purple-100 transition-colors flex items-center justify-center group"
+                    title="Fix with AI"
+                  >
+                    <Sparkles className="w-18 h-18 text-purple-600 group-hover:text-purple-700" />
+                  </button>
+                )}
                 <button className="w-32 h-32 rounded-6 hover:bg-black-alpha-4 transition-colors flex items-center justify-center">
                   <svg
                     className="w-18 h-18 text-black-alpha-48"

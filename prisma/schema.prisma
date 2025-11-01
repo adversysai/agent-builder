@@ -80,7 +80,7 @@ model WorkflowExecution {
 model UserApiKey {
   id           String    @id @default(cuid())
   userId       String
-  provider     String    // "anthropic" | "openai" | "groq"
+  provider     String    // "anthropic" | "openai" | "groq" | "google"
   encryptedKey String
   keyPrefix    String
   label        String?

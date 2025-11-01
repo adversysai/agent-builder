@@ -2,9 +2,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Bot, User, Loader2, CheckCircle, AlertCircle, Eye, Download, Sparkles, MessageSquare, Trash2, Globe, BarChart3, ShoppingCart, Calendar, Heart, Braces, ChevronDown, Settings } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, CheckCircle, AlertCircle, Eye, Download, Sparkles, MessageSquare, Trash2, Globe, BarChart3, ShoppingCart, Calendar, Heart, Braces, ChevronDown, Settings, StopCircle, Edit, Copy, Maximize2, Minimize2, Search, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Workflow } from '@/lib/workflow/types';
+import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 
 interface AIWorkflowChatProps {
   isOpen: boolean;
@@ -15,6 +16,14 @@ interface AIWorkflowChatProps {
     edges: any[];
     name?: string;
     description?: string;
+  };
+  latestExecution?: {
+    id: string;
+    status: string;
+    nodeResults: Record<string, any>;
+    output?: any;
+    startedAt: string;
+    completedAt?: string;
   };
 }
 
@@ -39,7 +48,36 @@ const estimateTokenCount = (text: string): number => {
   return Math.ceil(text.length / 4);
 };
 
-export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, currentWorkflow }: AIWorkflowChatProps) {
+// Helper function to truncate node results
+const truncateNodeResults = (nodeResults: Record<string, any>): Record<string, any> => {
+  const truncated: Record<string, any> = {};
+  for (const [nodeId, result] of Object.entries(nodeResults)) {
+    truncated[nodeId] = {
+      ...result,
+      output: typeof result.output === 'string' && result.output.length > 1000
+        ? result.output.substring(0, 1000) + `... (truncated, ${result.output.length - 1000} more characters)`
+        : result.output
+    };
+  }
+  return truncated;
+};
+
+// Helper function to truncate final output
+const truncateOutput = (output: any): any => {
+  if (typeof output === 'string' && output.length > 2000) {
+    return output.substring(0, 2000) + `... (truncated, ${output.length - 2000} more characters)`;
+  }
+  return output;
+};
+
+// Helper function to format execution summary
+const formatExecutionSummary = (execution: any): string => {
+  const completedAt = execution.completedAt ? new Date(execution.completedAt).toLocaleString() : 'In Progress';
+  const nodeCount = Object.keys(execution.nodeResults || {}).length;
+  return `Execution ${execution.id} (${execution.status}) - ${nodeCount} nodes - Completed: ${completedAt}`;
+};
+
+export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, currentWorkflow, latestExecution }: AIWorkflowChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -47,9 +85,21 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
   const [selectedModel, setSelectedModel] = useState('auto');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editedContent, setEditedContent] = useState('');
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [pendingAction, setPendingAction] = useState<null | 'web_search' | 'workflow_generation'>(null);
+  const [showToolMenu, setShowToolMenu] = useState(false);
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const toolMenuRef = useRef<HTMLDivElement>(null);
+
+  // Find the last assistant message for copy functionality
+  const lastAssistantMessage = messages.filter(m => m.role === 'assistant').pop();
 
   // Available models for workflow generation
   const availableModels = [
@@ -95,16 +145,19 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
       if (modelDropdownRef.current && !modelDropdownRef.current.contains(event.target as Node)) {
         setShowModelDropdown(false);
       }
+      if (toolMenuRef.current && !toolMenuRef.current.contains(event.target as Node)) {
+        setShowToolMenu(false);
+      }
     };
 
-    if (showModelDropdown) {
+    if (showModelDropdown || showToolMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showModelDropdown]);
+  }, [showModelDropdown, showToolMenu]);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isGenerating) return;
@@ -126,7 +179,36 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
     setInput('');
     setIsGenerating(true);
 
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
+      // Infer intent for status indicator
+      const wantsWorkflow = /\b(create|generate|build)\b.*\bworkflow\b/i.test(input);
+      const wantsWebSearch = selectedTools.includes('web_search');
+      const inferredAction: null | 'web_search' | 'workflow_generation' = wantsWebSearch
+        ? 'web_search'
+        : wantsWorkflow
+          ? 'workflow_generation'
+          : null;
+
+      // Add temporary status message in the chat stream
+      let statusMessageId: string | null = null;
+      if (inferredAction) {
+        setPendingAction(inferredAction);
+        statusMessageId = `status-${Date.now()}`;
+        const statusText = inferredAction === 'web_search'
+          ? '🔎 Performing web search...'
+          : '🧩 Creating workflow...';
+        const statusMessage: ChatMessage = {
+          id: statusMessageId,
+          role: 'assistant',
+          content: statusText,
+          timestamp: new Date(),
+          tokenCount: { input: 0, output: 0, total: 0 },
+        };
+        setMessages(prev => [...prev, statusMessage]);
+      }
       const response = await fetch('/api/workflows/generate', {
         method: 'POST',
         headers: {
@@ -137,7 +219,16 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
           conversationHistory: conversationHistory,
           currentWorkflow: currentWorkflow,
           preferredModel: selectedModel, // Pass the selected model
+          selectedTools: selectedTools, // Pass selected tools
+          executionContext: latestExecution ? {
+            executionId: latestExecution.id,
+            status: latestExecution.status,
+            nodeResults: truncateNodeResults(latestExecution.nodeResults),
+            output: truncateOutput(latestExecution.output),
+            completedAt: latestExecution.completedAt,
+          } : undefined,
         }),
+        signal: controller.signal,
       });
 
       // Check if response is HTML (error page) instead of JSON
@@ -179,6 +270,12 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
         throw new Error(errorMessage);
       }
 
+      // Remove temporary status message if present
+      if (statusMessageId) {
+        setMessages(prev => prev.filter(m => m.id !== statusMessageId));
+      }
+      setPendingAction(null);
+
       // Handle conversational responses vs workflow generation
       let responseContent: string;
       let workflow: Workflow | undefined;
@@ -217,6 +314,14 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
       setMessages(prev => [...prev, assistantMessage]);
       setConversationHistory(prev => [...prev, userMessage, assistantMessage]);
     } catch (error: any) {
+      // Clear pending status and remove status message if any
+      setPendingAction(null);
+      setMessages(prev => prev.filter(m => !m.id.startsWith('status-')));
+      if (error.name === 'AbortError') {
+        console.log('Generation cancelled by user');
+        return;
+      }
+      
       console.error('Workflow generation error:', error);
       
       // Provide more specific error messages based on error type
@@ -251,8 +356,53 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsGenerating(false);
+      setAbortController(null);
     }
   };
+
+  const handleStopGeneration = () => {
+    if (abortController) {
+      abortController.abort();
+      setIsGenerating(false);
+      setAbortController(null);
+    }
+  };
+
+  const handleEditMessage = (messageId: string, content: string) => {
+    setEditingMessageId(messageId);
+    setEditedContent(content);
+  };
+
+  const handleSaveEdit = async (messageId: string) => {
+    // Remove messages after the edited one
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    const updatedMessages = messages.slice(0, messageIndex);
+    
+    setMessages(updatedMessages);
+    setInput(editedContent);
+    setEditingMessageId(null);
+    setEditedContent('');
+    
+    // Trigger new generation
+    await handleSendMessage();
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditedContent('');
+  };
+
+  const handleCopyMessage = async (content: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+      toast.success('Copied to clipboard!');
+    } catch (error) {
+      toast.error('Failed to copy');
+    }
+  };
+
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion);
@@ -306,6 +456,20 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
     toast.info('Conversation cleared');
   };
 
+  const toggleTool = (toolName: string) => {
+    setSelectedTools(prev => 
+      prev.includes(toolName) 
+        ? prev.filter(t => t !== toolName)
+        : [...prev, toolName]
+    );
+  };
+
+  const availableTools = [
+    { id: 'web_search', name: 'Web Search', icon: Search, description: 'Search the web for real-time information' },
+    { id: 'data_analysis', name: 'Data Analysis', icon: () => <span className="text-sm">📊</span>, description: 'Analyze and process data' },
+    { id: 'workflow_builder', name: 'Workflow Builder', icon: () => <span className="text-sm">🔧</span>, description: 'Create and modify workflows' }
+  ];
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -322,10 +486,16 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
           {/* Chat Panel */}
           <motion.div
             initial={{ x: '100%', y: '100%' }}
-            animate={{ x: 0, y: 0 }}
+            animate={{ 
+              x: 0, 
+              y: 0,
+              width: isExpanded ? 'calc(100vw - 80px)' : '480px'
+            }}
             exit={{ x: '100%', y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="w-[480px] h-[80vh] bg-background-base border-l border-border-faint shadow-2xl flex flex-col absolute bottom-0 right-0 ai-chat-interface"
+            className={`h-[80vh] bg-background-base border-l border-border-faint shadow-2xl flex flex-col absolute bottom-0 right-0 ai-chat-interface ${
+              isExpanded ? 'max-w-[1400px]' : ''
+            }`}
             dir="ltr"
             style={{ direction: 'ltr', textAlign: 'left' }}
             onClick={(e) => e.stopPropagation()}
@@ -338,23 +508,54 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
                 </div>
                 <h2 className="text-sm font-semibold text-accent-black">AI Workflow Generator</h2>
               </div>
-              <div className="flex items-center gap-12">
+              <div className="flex items-center gap-8">
+                <button
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="px-16 py-8 bg-background-base hover:bg-heat-4 hover:bg-opacity-10 rounded-8 transition-colors group border border-border-faint"
+                  title={isExpanded ? "Collapse" : "Expand"}
+                >
+                  {isExpanded ? (
+                    <Minimize2 className="w-6 h-6 text-accent-black group-hover:text-heat-100" />
+                  ) : (
+                    <Maximize2 className="w-6 h-6 text-accent-black group-hover:text-heat-100" />
+                  )}
+                </button>
                 <button
                   onClick={clearConversation}
-                  className="p-12 hover:bg-heat-4 hover:bg-opacity-10 rounded-12 transition-colors group"
+                  className="px-16 py-8 bg-background-base hover:bg-heat-4 hover:bg-opacity-10 rounded-8 transition-colors group border border-border-faint"
                   title="Clear conversation"
                 >
-                  <Trash2 className="w-3 h-3 text-black-alpha-48 group-hover:text-heat-100" />
+                  <Trash2 className="w-6 h-6 text-accent-black group-hover:text-heat-100" />
                 </button>
                 <button
                   onClick={onClose}
-                  className="p-12 hover:bg-heat-4 hover:bg-opacity-10 rounded-12 transition-colors group"
+                  className="px-16 py-8 bg-background-base hover:bg-accent-crimson hover:bg-opacity-10 rounded-8 transition-colors group border border-border-faint"
                   title="Close AI Generator"
                 >
-                  <X className="w-3 h-3 text-black-alpha-48 group-hover:text-heat-100" />
+                  <X className="w-6 h-6 text-accent-black group-hover:text-accent-crimson" />
                 </button>
               </div>
             </div>
+
+            {/* Execution Context Indicator */}
+            {latestExecution && (
+              <div className="flex items-center gap-8 px-16 py-8 bg-blue-50 border-b border-blue-200">
+                <CheckCircle className="w-14 h-14 text-blue-600" />
+                <span className="text-xs text-blue-700">
+                  Context: Execution from {new Date(latestExecution.completedAt || latestExecution.startedAt).toLocaleString()}
+                </span>
+                <button
+                  onClick={() => {
+                    // Clear execution context by refreshing the component
+                    window.location.reload();
+                  }}
+                  className="ml-auto text-xs text-blue-600 hover:text-blue-700"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-16 space-y-16" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
@@ -548,7 +749,7 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex gap-12 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  className="flex gap-12 group"
                 >
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
                     message.role === 'user' 
@@ -558,13 +759,15 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
                     {message.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
                   </div>
                   
-                  <div className={`flex-1 max-w-[85%] ${message.role === 'user' ? 'text-right' : ''}`} dir="ltr" style={{ direction: 'ltr' }}>
-                    <div className={`inline-block p-16 rounded-12 ${
+                  <div className="flex-1 max-w-[85%]" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
+                    <div className={`relative inline-block p-16 rounded-12 ${
                       message.role === 'user'
                         ? 'bg-heat-100 text-white'
                         : 'bg-background-lighter border border-border-faint text-accent-black'
                     }`}>
-                      <p className="text-sm whitespace-pre-wrap leading-relaxed" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>{message.content}</p>
+                      <div className="text-sm leading-relaxed" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
+                        <MarkdownRenderer content={message.content} />
+                      </div>
                       
                       {message.error && (
                         <div className="mt-12 p-12 bg-accent-crimson bg-opacity-10 border border-accent-crimson border-opacity-20 rounded-12 text-accent-crimson text-xs">
@@ -635,12 +838,74 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
                       )}
                     </div>
                     
-                    <div className={`flex items-center gap-2 text-xs text-black-alpha-40 mt-2 ${message.role === 'user' ? 'text-right justify-end' : ''}`}>
+                    {/* Copy button for assistant messages */}
+                    {message.role === 'assistant' && (
+                      <button
+                        onClick={() => handleCopyMessage(message.content, message.id)}
+                        className="absolute top-8 right-8 opacity-0 group-hover:opacity-100 transition-opacity p-8 hover:bg-black-alpha-4 rounded-8 bg-background-base border border-border-faint shadow-sm"
+                        title="Copy message"
+                      >
+                        {copiedMessageId === message.id ? (
+                          <CheckCircle className="w-4 h-4 text-heat-100" />
+                        ) : (
+                          <Copy className="w-4 h-4 text-accent-black" />
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Edit functionality for user messages */}
+                    {message.role === 'user' && (
+                      <div className="flex items-center gap-8 mt-8">
+                        {editingMessageId === message.id ? (
+                          <>
+                            <textarea
+                              value={editedContent}
+                              onChange={(e) => setEditedContent(e.target.value)}
+                              className="w-full p-8 border border-border-faint rounded-8 text-sm"
+                              rows={3}
+                            />
+                            <div className="flex gap-4">
+                              <button 
+                                onClick={() => handleSaveEdit(message.id)}
+                                className="px-8 py-4 bg-heat-100 text-white rounded-6 text-xs hover:bg-heat-90"
+                              >
+                                Save
+                              </button>
+                              <button 
+                                onClick={handleCancelEdit}
+                                className="px-8 py-4 bg-black-alpha-10 text-black-alpha-64 rounded-6 text-xs hover:bg-black-alpha-20"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleEditMessage(message.id, message.content)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-6 hover:bg-black-alpha-4 rounded-6"
+                            title="Edit message"
+                          >
+                            <Edit className="w-14 h-14 text-black-alpha-48" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center gap-2 text-xs text-black-alpha-40 mt-2">
                       <span>{message.timestamp.toLocaleTimeString()}</span>
                       {message.tokenCount && (
                         <span className="px-1.5 py-0.5 bg-black-alpha-10 rounded-4 text-xs font-mono">
                           {message.tokenCount.total} tokens
                         </span>
+                      )}
+                      {message.role === 'assistant' && (
+                        <button
+                          onClick={() => handleCopyMessage(message.content, message.id)}
+                          className="px-1.5 py-0.5 bg-black-alpha-10 hover:bg-black-alpha-20 rounded-4 text-xs font-mono transition-colors"
+                          title="Copy message"
+                        >
+                          Copy
+                        </button>
                       )}
                     </div>
                   </div>
@@ -669,12 +934,67 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
                 </div>
               )}
 
+
               <div ref={messagesEndRef} />
             </div>
 
 
             {/* Input */}
             <div className="p-16 border-t border-border-faint bg-accent-white" dir="ltr" style={{ direction: 'ltr', textAlign: 'left' }}>
+              {/* Tool Selection */}
+              <div className="mb-12">
+                <div className="flex items-center gap-8 mb-8">
+                  <span className="text-xs text-black-alpha-48 font-medium">Tools:</span>
+                  <div className="flex items-center gap-4">
+                    {selectedTools.map(toolId => {
+                      const tool = availableTools.find(t => t.id === toolId);
+                      return tool ? (
+                        <div key={toolId} className="flex items-center gap-4 px-8 py-4 bg-heat-100 text-white rounded-4 text-xs">
+                          <tool.icon className="w-3 h-3" />
+                          <span>{tool.name}</span>
+                          <button
+                            onClick={() => toggleTool(toolId)}
+                            className="hover:bg-white hover:bg-opacity-20 rounded-2 p-1"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : null;
+                    })}
+                    <div className="relative" ref={toolMenuRef}>
+                      <button
+                        onClick={() => setShowToolMenu(!showToolMenu)}
+                        className="flex items-center gap-4 px-8 py-4 border border-border-faint hover:bg-black-alpha-5 rounded-4 text-xs transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Tool</span>
+                      </button>
+                      
+                      {showToolMenu && (
+                        <div className="absolute top-full left-0 mt-4 bg-white border border-border-faint rounded-8 shadow-lg z-10 min-w-200">
+                          {availableTools.map(tool => (
+                            <button
+                              key={tool.id}
+                              onClick={() => {
+                                toggleTool(tool.id);
+                                setShowToolMenu(false);
+                              }}
+                              className="w-full flex items-center gap-8 px-12 py-8 hover:bg-black-alpha-5 text-left text-xs"
+                            >
+                              <tool.icon className="w-4 h-4" />
+                              <div>
+                                <div className="font-medium">{tool.name}</div>
+                                <div className="text-black-alpha-48">{tool.description}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Model Selector */}
               <div className="mb-12 flex items-center justify-between">
                 <div className="flex items-center gap-8">
@@ -772,11 +1092,20 @@ export default function AIWorkflowChat({ isOpen, onClose, onApplyWorkflow, curre
                   }}
                 />
                 <button
-                  onClick={handleSendMessage}
-                  disabled={!input.trim() || isGenerating}
-                  className="absolute right-8 top-1/2 transform -translate-y-1/2 w-10 h-10 bg-heat-100 hover:bg-heat-100 hover:bg-opacity-90 disabled:bg-black-alpha-20 disabled:cursor-not-allowed text-white rounded-12 transition-all duration-200 hover:scale-105 disabled:hover:scale-100 flex items-center justify-center shadow-sm"
+                  onClick={isGenerating ? handleStopGeneration : handleSendMessage}
+                  disabled={!isGenerating && !input.trim()}
+                  className={`absolute right-8 top-1/2 transform -translate-y-1/2 rounded-12 transition-all duration-200 hover:scale-105 disabled:hover:scale-100 flex items-center justify-center shadow-lg border-2 ${
+                    isGenerating 
+                      ? 'w-12 h-12 bg-accent-crimson hover:bg-red-600 text-white border-red-300' 
+                      : 'w-10 h-10 bg-heat-100 hover:bg-heat-100 hover:bg-opacity-90 disabled:bg-black-alpha-20 disabled:cursor-not-allowed text-white border-green-300'
+                  }`}
+                  title={isGenerating ? "Stop generating" : "Send message"}
                 >
-                  <Send className="w-4 h-4" />
+                  {isGenerating ? (
+                    <StopCircle className="w-6 h-6" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                 </button>
               </div>
               

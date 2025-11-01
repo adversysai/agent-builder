@@ -32,7 +32,18 @@ export async function executeTavilyMCPNode(
   const params = nodeData.mcpParams || {};
   
   // Substitute variables in parameters
-  const substitutedParams = substituteVariables(params, state);
+  // Only substitute variables if the value is a string (substituteVariables expects a string)
+  const substitutedParams: any = {};
+  for (const key in params) {
+    let substitutedValue = params[key];
+    
+    // Only substitute variables if the value is a string
+    if (typeof substitutedValue === 'string') {
+      substitutedValue = substituteVariables(substitutedValue, state);
+    }
+    
+    substitutedParams[key] = substitutedValue;
+  }
   
   console.log(`🔍 Executing Tavily ${action} with params:`, substitutedParams);
 
@@ -83,7 +94,21 @@ export async function executeTavilyMCPNode(
     
   } catch (error) {
     console.error('❌ Tavily MCP execution failed:', error);
-    throw new Error(`Tavily ${action} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Return error structure instead of throwing to allow workflow to handle it
+    return {
+      results: [{
+        server: 'Tavily',
+        tool: action,
+        success: false,
+        error: errorMessage,
+      }],
+      output: null,
+      mcpServers: ['Tavily'],
+      error: errorMessage,
+      success: false,
+    };
   }
 }
 

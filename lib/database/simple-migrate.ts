@@ -43,6 +43,8 @@ export async function runSimpleMigrations() {
         provider TEXT NOT NULL,
         "apiKey" TEXT NOT NULL,
         "isActive" BOOLEAN DEFAULT true,
+        "usageCount" INTEGER DEFAULT 0,
+        "lastUsedAt" TIMESTAMP WITH TIME ZONE,
         "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
@@ -72,6 +74,34 @@ export async function runSimpleMigrations() {
     } catch (error) {
       if (error instanceof Error && error.message.includes('already exists')) {
         console.log('⚠️  revokedAt column already exists in userApiKeys table');
+      } else {
+        throw error;
+      }
+    }
+
+    // Add usageCount column to userLLMKeys if it doesn't exist
+    try {
+      await db.query(`
+        ALTER TABLE "userLLMKeys" ADD COLUMN "usageCount" INTEGER DEFAULT 0
+      `);
+      console.log('✅ Added usageCount column to userLLMKeys table');
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('already exists')) {
+        console.log('⚠️  usageCount column already exists in userLLMKeys table');
+      } else {
+        throw error;
+      }
+    }
+
+    // Add lastUsedAt column to userLLMKeys if it doesn't exist
+    try {
+      await db.query(`
+        ALTER TABLE "userLLMKeys" ADD COLUMN "lastUsedAt" TIMESTAMP WITH TIME ZONE
+      `);
+      console.log('✅ Added lastUsedAt column to userLLMKeys table');
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('already exists')) {
+        console.log('⚠️  lastUsedAt column already exists in userLLMKeys table');
       } else {
         throw error;
       }

@@ -19,6 +19,7 @@ import {
   FileText,
 } from "lucide-react";
 import Button from "@/components/shared/button/Button";
+import { MarkdownRenderer } from "@/components/shared/MarkdownRenderer";
 
 interface ExecutionPanelProps {
   workflow: Workflow | null;
@@ -31,6 +32,9 @@ interface ExecutionPanelProps {
   onClose: () => void;
   environment: 'draft' | 'production';
   pendingAuth: WorkflowPendingAuth | null;
+  onAnalyzeResults?: (execution: WorkflowExecution, nodeResults: Record<string, NodeExecutionResult>) => void;
+  onSendNodeToAI?: (nodeId: string, result: NodeExecutionResult) => void;
+  onRerunNode?: (nodeId: string) => Promise<void>;
 }
 
 const getNodeIcon = (nodeType: string) => {
@@ -78,6 +82,9 @@ export default function ExecutionPanel({
   onClose,
   environment,
   pendingAuth,
+  onAnalyzeResults,
+  onSendNodeToAI,
+  onRerunNode,
 }: ExecutionPanelProps) {
   
   // Track Google Doc creation for toast notifications
@@ -362,6 +369,21 @@ export default function ExecutionPanel({
                       </>
                     )}
                   </Button>
+                  
+                  {/* Analyze Results Button */}
+                  {execution && onAnalyzeResults && (
+                    <Button
+                      onClick={() => onAnalyzeResults(execution, nodeResults)}
+                      className="gap-6 px-10 py-6 text-white"
+                      style={{ backgroundColor: '#33ad13' }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2a8a0f'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#33ad13'}
+                      title="Analyze results with AI"
+                    >
+                      <Bot className="w-14 h-14" />
+                      Analyze
+                    </Button>
+                  )}
                   <button
                     onClick={() => {
                       const results = {
@@ -701,15 +723,17 @@ export default function ExecutionPanel({
                 </div>
               ) : (
                 <div className="space-y-16">
-                  {Object.entries(nodeResults).map(([nodeId, result]) => {
+                  {Object.entries(nodeResults)
+                    .filter(([nodeId, result]) => result !== undefined && result !== null)
+                    .map(([nodeId, result]) => {
                     const node = workflow?.nodes.find(n => n.id === nodeId);
                     const nodeData = node?.data as any;
                     const nodeName = nodeData?.nodeName || nodeData?.label || 'Node';
                     const nodeType = nodeData?.nodeType || node?.type || 'agent';
                     const NodeIcon = getNodeIcon(nodeType);
                     const nodeColor = getNodeColor(nodeType);
-                    const isActive = currentNodeId === nodeId && result.status === 'running';
-                    const statusLabel = result.status === 'pending-authorization' ? 'Awaiting authorization' : result.status;
+                    const isActive = currentNodeId === nodeId && result?.status === 'running';
+                    const statusLabel = result?.status === 'pending-authorization' ? 'Awaiting authorization' : result?.status;
 
                     return (
                       <motion.div
@@ -719,9 +743,9 @@ export default function ExecutionPanel({
                         className={`rounded-12 p-16 border transition-all ${
                           isActive
                             ? 'border-border-faint bg-accent-white shadow-sm'
-                            : result.status === 'completed'
+                            : result?.status === 'completed'
                             ? 'border-heat-100 bg-accent-white'
-                            : result.status === 'failed'
+                            : result?.status === 'failed'
                             ? 'border-border-faint bg-accent-white'
                             : 'border-border-faint bg-accent-white'
                         }`}
@@ -742,14 +766,14 @@ export default function ExecutionPanel({
                                 </svg>
                               </div>
                             )}
-                            {result.status === 'completed' && !isActive && (
+                            {result?.status === 'completed' && !isActive && (
                               <div className="w-16 h-16 bg-black-alpha-12 rounded-full flex items-center justify-center">
                                 <svg className="w-10 h-10 text-black-alpha-64" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
                               </div>
                             )}
-                            {result.status === 'failed' && (
+                            {result?.status === 'failed' && (
                               <div className="w-16 h-16 bg-black-alpha-40 rounded-full flex items-center justify-center">
                                 <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -780,10 +804,10 @@ export default function ExecutionPanel({
                               </svg>
                               Schema
                             </button>
-                            {result.status !== 'completed' && (
+                            {result?.status !== 'completed' && (
                               <span className={`text-body-small px-8 py-4 rounded-6 border ${
-                                result.status === 'running' ? 'bg-accent-white text-black-alpha-64 border-border-faint' :
-                                result.status === 'failed' ? 'bg-accent-white text-accent-black border-border-faint' :
+                                result?.status === 'running' ? 'bg-accent-white text-black-alpha-64 border-border-faint' :
+                                result?.status === 'failed' ? 'bg-accent-white text-accent-black border-border-faint' :
                                 'bg-accent-white text-gray-600 border-gray-200'
                               }`}>
                                 {statusLabel}
@@ -887,7 +911,7 @@ export default function ExecutionPanel({
                               )}
 
                               {/* Output Data */}
-                              {result.output && (
+                              {result?.output && (
                                 <div>
                                   <p className="text-body-small text-black-alpha-48 mb-6 font-medium">Output Data:</p>
                                   <div className="bg-background-base rounded-6 p-8 border border-border-faint">
@@ -899,7 +923,7 @@ export default function ExecutionPanel({
                               )}
 
                               {/* Tool Call Details */}
-                              {result.toolCalls && result.toolCalls.length > 0 && (
+                              {result?.toolCalls && result.toolCalls.length > 0 && (
                                 <div>
                                   <div className="flex items-center gap-8 mb-8">
                                     <div className="w-20 h-20 rounded-4 bg-[#FFEFA4] dark:bg-[#FFDD40] flex items-center justify-center flex-shrink-0">
@@ -974,12 +998,12 @@ export default function ExecutionPanel({
                         )}
 
                         {/* Node Error */}
-                        {result.error && (
+                        {result?.error && (
                           <div className="mt-12">
                             <div className="flex items-center justify-between mb-6">
                               <p className="text-body-small text-accent-black font-medium">Error:</p>
                               <button
-                                onClick={() => handleCopyError(result.error!, nodeId)}
+                                onClick={() => handleCopyError(result?.error || 'Unknown error', nodeId)}
                                 className="text-body-small text-accent-black hover:text-accent-black transition-colors flex items-center gap-4 px-8 py-4 rounded-6 hover:bg-black-alpha-4"
                               >
                                 {copiedError === nodeId ? (
@@ -1001,14 +1025,14 @@ export default function ExecutionPanel({
                             </div>
                             <div className="bg-black-alpha-4 rounded-8 p-12 border border-border-faint">
                               <pre className="text-body-small text-accent-black whitespace-pre-wrap overflow-auto max-h-200 font-mono">
-                                {result.error}
+                                {result?.error || 'Unknown error'}
                               </pre>
                             </div>
                           </div>
                         )}
 
 
-                        {result.pendingAuth && (
+                        {result?.pendingAuth && (
                           <div className="mt-12 p-12 bg-heat-4 border border-heat-100 rounded-8">
                             <p className="text-body-small font-medium text-accent-black">
                               Authorization required for {result.pendingAuth.toolName}
@@ -1033,9 +1057,21 @@ export default function ExecutionPanel({
                         )}
 
                         {/* Node Output */}
-                        {result.output && !result.error && (
+                        {result?.output && !result?.error && (
                           <div className="mt-12">
-                            <p className="text-body-small text-black-alpha-48 mb-6">Output:</p>
+                            <div className="flex items-center justify-between mb-6">
+                              <p className="text-body-small text-black-alpha-48">Output:</p>
+                              {onSendNodeToAI && (
+                                <button
+                                  onClick={() => onSendNodeToAI(nodeId, result)}
+                                  className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-4 px-8 py-4 hover:bg-blue-50 rounded-6 transition-colors"
+                                  title="Send this node's output to AI chat"
+                                >
+                                  <Bot className="w-12 h-12" />
+                                  Analyze
+                                </button>
+                              )}
+                            </div>
                             
                             {/* Special handling for Google Docs results */}
                             {(() => {
@@ -1123,12 +1159,29 @@ export default function ExecutionPanel({
                                 }
                               }
                               
-                              // Default output display
+                              // Default output display with markdown support
                               return (
                                 <div className="bg-background-base rounded-8 p-12 border border-border-faint">
-                                  <pre className="text-[11px] leading-relaxed text-accent-black whitespace-pre-wrap overflow-auto max-h-200 font-mono">
-                                    {outputStr}
-                                  </pre>
+                                  {(() => {
+                                    // Check if output looks like markdown (contains tables or code blocks)
+                                    const hasMarkdown = outputStr.includes('|') && outputStr.includes('---') || 
+                                                        outputStr.includes('```');
+                                    
+                                    if (hasMarkdown) {
+                                      return (
+                                        <div className="text-[11px] leading-relaxed text-accent-black overflow-auto max-h-200">
+                                          <MarkdownRenderer content={outputStr} className="prose prose-sm" />
+                                        </div>
+                                      );
+                                    }
+                                    
+                                    // Default to pre tag for non-markdown content
+                                    return (
+                                      <pre className="text-[11px] leading-relaxed text-accent-black whitespace-pre-wrap overflow-auto max-h-200 font-mono">
+                                        {outputStr}
+                                      </pre>
+                                    );
+                                  })()}
                                 </div>
                               );
                             })()}
@@ -1179,21 +1232,44 @@ export default function ExecutionPanel({
                         )}
 
 
-                        {/* Timing */}
-                        {result.startedAt && (
-                          <div className="flex items-center gap-8 mt-12 text-body-small text-black-alpha-48">
-                            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            {result.completedAt ? (
-                              <span>
-                                {Math.round((new Date(result.completedAt).getTime() - new Date(result.startedAt).getTime()) / 1000)}s
-                              </span>
-                            ) : (
-                              <span className="animate-pulse">Running...</span>
-                            )}
-                          </div>
-                        )}
+                        {/* Timing and Re-run Button */}
+                        <div className="flex items-center justify-between mt-12">
+                          {result?.startedAt && (
+                            <div className="flex items-center gap-8 text-body-small text-black-alpha-48">
+                              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {result?.completedAt ? (
+                                <span>
+                                  {Math.round((new Date(result.completedAt).getTime() - new Date(result.startedAt).getTime()) / 1000)}s
+                                </span>
+                              ) : (
+                                <span className="animate-pulse">Running...</span>
+                              )}
+                            </div>
+                          )}
+                          {/* Re-run Button */}
+                          {onRerunNode && result?.status === 'completed' && !isRunning && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await onRerunNode(nodeId);
+                                  toast.success(`Re-running ${nodeName}...`);
+                                } catch (error) {
+                                  const message = error instanceof Error ? error.message : 'Failed to re-run node';
+                                  toast.error(message);
+                                }
+                              }}
+                              className="px-12 py-6 bg-accent-white hover:bg-black-alpha-4 border border-border-faint rounded-6 text-body-small text-accent-black font-medium transition-colors flex items-center gap-6"
+                              title={`Re-run ${nodeName} and downstream nodes`}
+                            >
+                              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              Re-run
+                            </button>
+                          )}
+                        </div>
                       </motion.div>
                     );
                   })}
@@ -1253,7 +1329,18 @@ export default function ExecutionPanel({
                   )}
 
                   {/* Final Result */}
-                  {execution?.status === 'completed' && (
+                  {(() => {
+                    // Check if workflow is truly completed - all conditions must be met
+                    const hasCompletedStatus = execution?.status === 'completed';
+                    const isNotRunning = !isRunning;
+                    const hasCompletedAt = !!execution?.completedAt;
+                    const noCurrentNode = !currentNodeId;
+                    const noRunningNodes = !Object.values(nodeResults).some(result => 
+                      result && (result.status === 'running' || result.status === 'pending')
+                    );
+                    
+                    return hasCompletedStatus && isNotRunning && hasCompletedAt && noCurrentNode && noRunningNodes;
+                  })() && (
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}

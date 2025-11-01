@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import type { Node } from "@xyflow/react";
+import { Sparkles } from "lucide-react";
 import VariableReferencePicker from "./VariableReferencePicker";
 
 interface HTTPNodePanelProps {
@@ -11,6 +12,21 @@ interface HTTPNodePanelProps {
   onClose: () => void;
   onDelete: (nodeId: string) => void;
   onUpdate: (nodeId: string, data: any) => void;
+  onFixWithAI?: (nodeId: string) => void;
+  workflow?: {
+    nodes: any[];
+    edges: any[];
+    name?: string;
+    description?: string;
+  };
+  error?: {
+    message: string;
+    type?: string;
+  };
+  executionContext?: {
+    nodeResults?: Record<string, any>;
+    variables?: Record<string, any>;
+  };
 }
 
 interface Header {
@@ -18,7 +34,7 @@ interface Header {
   value: string;
 }
 
-export default function HTTPNodePanel({ node, nodes, onClose, onDelete, onUpdate }: HTTPNodePanelProps) {
+export default function HTTPNodePanel({ node, nodes, onClose, onDelete, onUpdate, onFixWithAI, workflow, error, executionContext }: HTTPNodePanelProps) {
   const nodeData = node?.data as any;
 
   const [url, setUrl] = useState(nodeData?.httpUrl || "https://api.example.com/endpoint");
@@ -85,6 +101,15 @@ export default function HTTPNodePanel({ node, nodes, onClose, onDelete, onUpdate
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-title-h4 text-accent-black">HTTP Request</h3>
               <div className="flex items-center gap-8">
+                {onFixWithAI && (
+                  <button
+                    onClick={() => onFixWithAI(node?.id || '')}
+                    className="w-32 h-32 rounded-6 hover:bg-purple-100 transition-colors flex items-center justify-center group"
+                    title="Fix with AI"
+                  >
+                    <Sparkles className="w-18 h-18 text-purple-600 group-hover:text-purple-700" />
+                  </button>
+                )}
                 <button
                   onClick={() => onDelete(node?.id || '')}
                   className="w-32 h-32 rounded-6 hover:bg-black-alpha-4 transition-colors flex items-center justify-center group"

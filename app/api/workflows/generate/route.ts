@@ -3,10 +3,35 @@ import Anthropic from '@anthropic-ai/sdk';
 import { validateApiKey, createUnauthorizedResponse } from '@/lib/api/auth';
 import { getLLMApiKey } from '@/lib/api/llm-keys';
 import { Workflow } from '@/lib/workflow/types';
+import { webSearchTool, webSearchDirect } from '@/lib/workflow/tools/web-search-tool';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// Helper function to format search results
+function formatSearchResults(results: any): string {
+  if (!results.results || !Array.isArray(results.results)) {
+    return 'No search results found.';
+  }
+  
+  let formatted = '';
+  if (results.answer) {
+    formatted += `**Answer:** ${results.answer}\n\n`;
+  }
+  
+  formatted += '**Sources:**\n\n';
+  results.results.forEach((result: any, index: number) => {
+    formatted += `${index + 1}. **${result.title}**\n`;
+    formatted += `   - URL: ${result.url}\n`;
+    if (result.content) {
+      formatted += `   - Summary: ${result.content.substring(0, 200)}...\n`;
+    }
+    formatted += '\n';
+  });
+  
+  return formatted;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +43,7 @@ export async function POST(request: NextRequest) {
       return createUnauthorizedResponse(authResult.error || 'Authentication required');
     }
 
-    const { prompt, conversationHistory = [], userId, currentWorkflow, preferredModel } = await request.json();
+    const { prompt, conversationHistory = [], userId, currentWorkflow, preferredModel, executionContext, selectedTools = [] } = await request.json();
 
     if (!prompt || typeof prompt !== 'string') {
       return NextResponse.json(
@@ -146,7 +171,19 @@ export async function POST(request: NextRequest) {
 
     // Generate workflow using the selected provider
     let response;
-    const systemPrompt = await getWorkflowGeneratorPrompt(currentWorkflow);
+    let systemPrompt = await getWorkflowGeneratorPrompt(currentWorkflow);
+
+    // Add execution context to system prompt if available
+    if (executionContext) {
+      systemPrompt += `\n\n## Recent Workflow Execution Results\n\n`;
+      systemPrompt += `Execution ID: ${executionContext.executionId}\n`;
+      systemPrompt += `Status: ${executionContext.status}\n`;
+      systemPrompt += `Completed: ${executionContext.completedAt}\n\n`;
+      systemPrompt += `Node Results:\n${JSON.stringify(executionContext.nodeResults, null, 2)}\n\n`;
+      systemPrompt += `Final Output:\n${JSON.stringify(executionContext.output, null, 2)}\n\n`;
+      systemPrompt += `You can now answer questions about these results, provide insights, suggest improvements, or create visualizations.`;
+    }
+
 
     if (selectedProvider === 'anthropic') {
       // Anthropic with thinking
@@ -161,22 +198,62 @@ export async function POST(request: NextRequest) {
         }
       });
     } else if (selectedProvider === 'openai') {
-      // OpenAI with function calling
+      // OpenAI with conditional tool calling
+      const tools = selectedTools.includes('web_search') ? [webSearchTool] : [];
+      const toolChoice = selectedTools.includes('web_search') ? 'auto' : 'none';
+      
       response = await client.chat.completions.create({
         model: selectedModel,
         messages: [
           { role: 'system', content: systemPrompt },
           ...messages
         ],
+        tools: tools,
+        tool_choice: toolChoice,
         max_tokens: 12000,
         temperature: 0.7,
       });
     } else if (selectedProvider === 'google') {
-      // Google Gemini
-      const model = client.getGenerativeModel({ model: selectedModel });
-      const fullPrompt = `${systemPrompt}\n\nUser: ${prompt}`;
-      const result = await model.generateContent(fullPrompt);
-      response = { content: [{ text: result.response.text() }] };
+      // Google Gemini - properly handle conversation history like OpenAI
+      const model = client.getGenerativeModel({ 
+        model: selectedModel,
+        systemInstruction: systemPrompt,
+      });
+      
+      // Convert messages to Gemini format (contents array with role and parts)
+      // Gemini uses 'user' and 'model' roles (instead of 'assistant')
+      const contents = messages.map((msg: any) => {
+        const role = msg.role === 'assistant' ? 'model' : 'user';
+        return {
+          role: role,
+          parts: [{ text: msg.content }],
+        };
+      });
+      
+      const result = await model.generateContent({ contents });
+      const responseText = result.response.text();
+      
+      // Extract usage information if available
+      // Note: usageMetadata is a property, not a method, and may not always be available
+      const usageMetadata = result.response.usageMetadata || null;
+      const usage = usageMetadata ? {
+        input_tokens: usageMetadata.promptTokenCount || 0,
+        output_tokens: usageMetadata.candidatesTokenCount || 0,
+        total_tokens: (usageMetadata.promptTokenCount || 0) + (usageMetadata.candidatesTokenCount || 0),
+        prompt_tokens: usageMetadata.promptTokenCount || 0,
+        completion_tokens: usageMetadata.candidatesTokenCount || 0,
+      } : {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+      };
+      
+      response = { 
+        content: [{ text: responseText }],
+        usage: usage,
+      };
     } else if (selectedProvider === 'groq') {
       // Groq (OpenAI compatible)
       response = await client.chat.completions.create({
@@ -215,8 +292,48 @@ export async function POST(request: NextRequest) {
         
         responseText = textContent.text;
       } else if (selectedProvider === 'openai' || selectedProvider === 'groq') {
-        // Handle OpenAI/Groq response format
-        responseText = response.choices[0].message.content || '';
+        // Handle OpenAI/Groq response format with tool calling
+        const message = response.choices[0].message;
+        
+        // Check if the model wants to call a tool
+        if (message.tool_calls && message.tool_calls.length > 0) {
+          const toolCall = message.tool_calls[0];
+          
+          if (toolCall.function.name === 'web_search') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              console.log('🔍 AI requested web search:', args.query);
+              
+              // Execute web search
+              const searchResults = await webSearchDirect(args);
+              
+              // Create a follow-up message with search results
+              const searchContext = `Web search results for "${args.query}":\n\n${formatSearchResults(searchResults)}`;
+              
+              // Make another API call with the search results
+              const followUpResponse = await client.chat.completions.create({
+                model: selectedModel,
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  ...messages,
+                  { role: 'assistant', content: `I'll search for information about "${args.query}" to help you.` },
+                  { role: 'user', content: `Here are the search results: ${searchContext}` }
+                ],
+                max_tokens: 12000,
+                temperature: 0.7,
+              });
+              
+              responseText = followUpResponse.choices[0].message.content || '';
+            } catch (error) {
+              console.error('Tool call error:', error);
+              responseText = `I encountered an error while searching: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            }
+          } else {
+            responseText = message.content || 'I received a tool call but don\'t know how to handle it.';
+          }
+        } else {
+          responseText = message.content || '';
+        }
       } else if (selectedProvider === 'google') {
         // Handle Google response format
         responseText = response.content[0].text;
@@ -268,6 +385,44 @@ export async function POST(request: NextRequest) {
         },
         { status: 500 }
       );
+    }
+
+    // Normalize common LLM mismatches and enforce repo scoping before validation
+    if (generatedWorkflow && Array.isArray(generatedWorkflow.nodes)) {
+      for (const node of generatedWorkflow.nodes) {
+        const nodeType = node.data?.nodeType || node.type;
+        if (nodeType === 'agent') {
+          const fmt = node.data?.outputFormat;
+          if (fmt === 'Markdown') {
+            node.data.outputFormat = 'Text';
+            console.log(`Normalized outputFormat 'Markdown' -> 'Text' for agent node ${node.id}`);
+          }
+        }
+
+        // Enforce GitHub scoping rules on MCP nodes
+        if (nodeType === 'mcp') {
+          const action = node.data?.mcpAction;
+          const params = node.data?.mcpParams || {};
+          // Ensure we have repo variables as placeholders
+          const repoSlugVar = '{{repoSlug}}';
+          const ownerVar = '{{owner}}';
+          const repoNameVar = '{{repoName}}';
+
+          if (action === 'search_code') {
+            if (typeof params.query === 'string') {
+              if (!/\brepo:\s*\{\{/.test(params.query)) {
+                node.data.mcpParams.query = `${params.query} repo:${repoSlugVar}`.trim();
+                console.log(`Appended repo filter to GitHub query for node ${node.id}`);
+              }
+            }
+          }
+
+          if (action === 'list_repository_security_advisories') {
+            if (!('owner' in params)) node.data.mcpParams.owner = ownerVar;
+            if (!('repo' in params)) node.data.mcpParams.repo = repoNameVar;
+          }
+        }
+      }
     }
 
     // Validate the generated workflow using the schema

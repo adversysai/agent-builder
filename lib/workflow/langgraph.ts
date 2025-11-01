@@ -1189,6 +1189,212 @@ export class LangGraphExecutor {
     };
   }
 
+  /**
+   * Execute workflow from a specific node (partial execution)
+   * Re-executes the target node and all downstream nodes, preserving upstream state
+   */
+  async executeFromNode(nodeId: string, preservedState?: Record<string, NodeExecutionResult>) {
+    const threadId = `thread_${Date.now()}`;
+    this.activeThreadId = threadId;
+    this.pendingAuth = null;
+
+    // Find the target node
+    const targetNode = this.workflow.nodes.find(n => n.id === nodeId);
+    if (!targetNode) {
+      throw new Error(`Node ${nodeId} not found in workflow`);
+    }
+
+    // Build initial state from preserved upstream results
+    const preservedVariables: Record<string, any> = {};
+    const preservedNodeResults: Record<string, NodeExecutionResult> = preservedState || {};
+    const preservedChatHistory: Array<{ role: string; content: string }> = [];
+
+    // Reconstruct state from preserved node results
+    if (preservedState && Object.keys(preservedState).length > 0) {
+      // Get all upstream nodes (nodes that come before the target node)
+      const upstreamNodes = this.getUpstreamNodes(nodeId);
+      
+      // Reconstruct variables from upstream node outputs
+      for (const [id, result] of Object.entries(preservedState)) {
+        if (upstreamNodes.has(id) && result && result.output !== undefined) {
+          preservedNodeResults[id] = result;
+        }
+      }
+
+      // Find the immediate upstream node(s) that feed directly into the target node
+      const incomingEdges = this.workflow.edges.filter(e => e.target === nodeId);
+      const immediateUpstreamNodes = incomingEdges.map(e => e.source);
+      
+      // Use the output from the immediate upstream node as lastOutput
+      // If multiple upstream nodes, use the first one found
+      for (const upstreamId of immediateUpstreamNodes) {
+        if (preservedState[upstreamId] && preservedState[upstreamId].output !== undefined) {
+          preservedVariables.lastOutput = preservedState[upstreamId].output;
+          break; // Use the first upstream node's output
+        }
+      }
+
+      // Find the start node to get initial input
+      const startNode = this.workflow.nodes.find(n => {
+        const nodeType = (n.data as any)?.nodeType || n.type;
+        return nodeType === 'start';
+      });
+
+      if (startNode && preservedState[startNode.id] && preservedState[startNode.id].output) {
+        const startResult = preservedState[startNode.id];
+        if (startResult.output && typeof startResult.output === 'object') {
+          // Extract input from start node output
+          preservedVariables.input = startResult.output.input || startResult.output;
+        } else if (typeof startResult.output === 'string') {
+          preservedVariables.input = startResult.output;
+        }
+      }
+    }
+
+    const initialState = {
+      variables: {
+        input: preservedVariables.input || '',
+        lastOutput: preservedVariables.lastOutput || '',
+        ...preservedVariables,
+      },
+      chatHistory: preservedChatHistory,
+      currentNodeId: nodeId,
+      nodeResults: preservedNodeResults,
+      pendingAuth: null,
+      loopResults: [],
+    };
+
+    this.lastStreamState = initialState;
+
+    // Get all downstream nodes (nodes that depend on the target node)
+    const downstreamNodes = this.getDownstreamNodes(nodeId);
+    const nodesToExecute = new Set([nodeId, ...downstreamNodes]);
+
+    // Create a custom graph that only includes the target node and downstream nodes
+    // We'll manually route to execute only the necessary nodes
+    const rawStream = await this.graph.stream(initialState, {
+      configurable: { thread_id: threadId },
+      streamMode: "values" as const,
+      recursionLimit: 100,
+    });
+
+    // Filter stream to only execute target node and downstream nodes
+    return this.filterStreamForPartialExecution(rawStream, nodeId, nodesToExecute, initialState);
+  }
+
+  /**
+   * Get all upstream nodes (nodes that feed into the target node)
+   */
+  private getUpstreamNodes(nodeId: string): Set<string> {
+    const upstream = new Set<string>();
+    const visited = new Set<string>();
+
+    function traverse(currentNodeId: string) {
+      if (visited.has(currentNodeId)) return;
+      visited.add(currentNodeId);
+
+      const incomingEdges = this.workflow.edges.filter(e => e.target === currentNodeId);
+      for (const edge of incomingEdges) {
+        upstream.add(edge.source);
+        traverse.call(this, edge.source);
+      }
+    }
+
+    traverse.call(this, nodeId);
+    return upstream;
+  }
+
+  /**
+   * Get all downstream nodes (nodes that depend on the target node)
+   */
+  private getDownstreamNodes(nodeId: string): Set<string> {
+    const downstream = new Set<string>();
+    const visited = new Set<string>();
+
+    function traverse(currentNodeId: string) {
+      if (visited.has(currentNodeId)) return;
+      visited.add(currentNodeId);
+
+      const outgoingEdges = this.workflow.edges.filter(e => e.source === currentNodeId);
+      for (const edge of outgoingEdges) {
+        downstream.add(edge.target);
+        traverse.call(this, edge.target);
+      }
+    }
+
+    traverse.call(this, nodeId);
+    return downstream;
+  }
+
+  /**
+   * Filter stream to only execute target node and downstream nodes
+   */
+  private async *filterStreamForPartialExecution(
+    rawStream: AsyncIterable<any>,
+    startNodeId: string,
+    nodesToExecute: Set<string>,
+    fallbackState: any
+  ): AsyncGenerator<any> {
+    let latestState = fallbackState;
+    let startedExecuting = false;
+
+    try {
+      for await (const chunk of rawStream) {
+        // Check if we've reached our target node
+        const currentNodeId = chunk.currentNodeId || chunk.variables?.currentNodeId;
+        
+        if (currentNodeId === startNodeId || nodesToExecute.has(currentNodeId)) {
+          startedExecuting = true;
+        }
+
+        // Only yield chunks for nodes we want to execute
+        if (startedExecuting && (currentNodeId === undefined || nodesToExecute.has(currentNodeId) || currentNodeId === '')) {
+          if (isInterrupted(chunk)) {
+            const interruptRecord = (chunk as any).__interrupt__?.[0] ?? null;
+            const pendingAuth = this.pendingAuth ?? interruptRecord?.value?.pendingAuth ?? null;
+            const pauseState = {
+              ...(latestState ?? {}),
+              pendingAuth,
+              currentNodeId: interruptRecord?.value?.nodeId ?? latestState?.currentNodeId ?? '',
+              nodeResults: latestState?.nodeResults ?? {},
+            };
+
+            this.lastStreamState = pauseState;
+            yield pauseState;
+            return;
+          }
+
+          const enrichedChunk = {
+            ...chunk,
+            pendingAuth: this.pendingAuth,
+          };
+
+          latestState = enrichedChunk;
+          this.lastStreamState = enrichedChunk;
+          yield enrichedChunk;
+        }
+
+        // Stop if we've completed all downstream nodes
+        if (startedExecuting && chunk.status === 'completed' && !chunk.currentNodeId) {
+          break;
+        }
+      }
+    } catch (streamError) {
+      console.error('ERROR: Stream iteration error in filterStreamForPartialExecution:', streamError);
+      const errorState = {
+        ...(latestState ?? {}),
+        error: streamError instanceof Error ? streamError.message : 'Stream error',
+        status: 'failed'
+      };
+      this.lastStreamState = errorState;
+      yield errorState;
+      return;
+    }
+
+    this.pendingAuth = null;
+    this.lastStreamState = latestState;
+  }
+
   private wrapStreamWithInterruptHandling(rawStream: AsyncIterable<any>, fallbackState: any) {
     const self = this;
 

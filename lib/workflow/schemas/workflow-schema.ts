@@ -203,6 +203,25 @@ export function validateNodeRequirements(workflow: GeneratedWorkflow): string[] 
         if (!node.data.mcpAction) {
           errors.push(`MCP node ${node.id} missing mcpAction`);
         }
+
+        // GitHub scoping guard: for search_code ensure repo scoping; for advisories ensure owner/repo
+        try {
+          const serverNames = (node.data.mcpServers || []).map((s: any) => (s?.name || '').toLowerCase());
+          const isGitHub = serverNames.some((n: string) => n.includes('github')) || (node.data.mcpServers || []).some((s: any) => String(s?.url || '').includes('api.github.com'));
+          const action = node.data.mcpAction;
+          if (isGitHub && action === 'search_code') {
+            const q = node.data.mcpParams?.query;
+            if (typeof q !== 'string' || !q.includes('repo:')) {
+              errors.push(`MCP node ${node.id} (GitHub search_code) must include repo:OWNER/REPO in query`);
+            }
+          }
+          if (isGitHub && action === 'list_repository_security_advisories') {
+            const p = node.data.mcpParams || {};
+            if (!p.owner || !p.repo) {
+              errors.push(`MCP node ${node.id} (GitHub advisories) must include owner and repo parameters`);
+            }
+          }
+        } catch {}
         break;
         
       case 'transform':

@@ -70,7 +70,7 @@ export async function isProviderConfigured(
  * Get all configured providers for a user
  */
 export async function getConfiguredProviders(userId?: string): Promise<string[]> {
-  const providers: ('anthropic' | 'openai' | 'groq')[] = ['anthropic', 'openai', 'groq'];
+  const providers: ('anthropic' | 'openai' | 'groq' | 'google')[] = ['anthropic', 'openai', 'groq', 'google'];
   const configured: string[] = [];
 
   for (const provider of providers) {
@@ -87,7 +87,7 @@ export async function getConfiguredProviders(userId?: string): Promise<string[]>
  * This is a helper function that can be used by the execute routes
  */
 export async function initializeLLMClient(
-  provider: 'anthropic' | 'openai' | 'groq',
+  provider: 'anthropic' | 'openai' | 'groq' | 'google',
   userId?: string
 ): Promise<{ apiKey: string; provider: string }> {
   const apiKey = await getLLMApiKey(provider, userId);
@@ -97,7 +97,8 @@ export async function initializeLLMClient(
       `No API key found for ${provider}. Please configure your API key in Settings or set the ${
         provider === 'anthropic' ? 'ANTHROPIC_API_KEY' :
         provider === 'openai' ? 'OPENAI_API_KEY' :
-        'GROQ_API_KEY'
+        provider === 'groq' ? 'GROQ_API_KEY' :
+        'GOOGLE_API_KEY'
       } environment variable.`
     );
   }
@@ -113,10 +114,11 @@ export async function getProvidersStatus(userId?: string): Promise<{
   anthropic: { configured: boolean; source: 'user' | 'env' | null };
   openai: { configured: boolean; source: 'user' | 'env' | null };
   groq: { configured: boolean; source: 'user' | 'env' | null };
+  google: { configured: boolean; source: 'user' | 'env' | null };
 }> {
   const status: any = {};
 
-  for (const provider of ['anthropic', 'openai', 'groq'] as const) {
+  for (const provider of ['anthropic', 'openai', 'groq', 'google'] as const) {
     // Check user key first
     if (userId) {
       try {
@@ -139,6 +141,7 @@ export async function getProvidersStatus(userId?: string): Promise<{
       anthropic: 'ANTHROPIC_API_KEY',
       openai: 'OPENAI_API_KEY',
       groq: 'GROQ_API_KEY',
+      google: 'GOOGLE_API_KEY',
     };
 
     const envKey = envKeyMap[provider];

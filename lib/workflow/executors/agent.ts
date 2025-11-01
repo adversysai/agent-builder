@@ -79,6 +79,28 @@ async function executeAgentNodeInternal(
     // Build context from previous node output
     const lastOutput = state.variables?.lastOutput;
 
+    // Validate that previous node didn't fail with an error
+    // This prevents agents from hallucinating content based on error messages
+    if (lastOutput && typeof lastOutput === 'object') {
+      // Check for error structure from MCP nodes
+      if ((lastOutput as any).success === false || (lastOutput as any).error) {
+        const errorMessage = (lastOutput as any).error || 'Previous node failed';
+        throw new Error(`Cannot proceed: ${errorMessage}. Please fix the upstream node before continuing.`);
+      }
+      
+      // Check for error in results array (common in MCP nodes)
+      if (Array.isArray((lastOutput as any).results)) {
+        const hasError = (lastOutput as any).results.some((result: any) => 
+          result.success === false || result.error
+        );
+        if (hasError) {
+          const errorResult = (lastOutput as any).results.find((result: any) => result.error);
+          const errorMessage = errorResult?.error || 'Previous MCP operation failed';
+          throw new Error(`Cannot proceed: ${errorMessage}. Please fix the upstream node before continuing.`);
+        }
+      }
+    }
+
     // Migrate data if using old format
     const migratedData = migrateMCPData(data);
 
@@ -190,7 +212,8 @@ async function executeAgentNodeInternal(
     }
 
     // Parse model string (handle models with slashes like groq/openai/gpt-oss-120b)
-    const modelString = data.model || 'anthropic/claude-sonnet-4-5-20250929';
+    // Default to OpenAI unless explicitly specified
+    const modelString = data.model || 'openai/gpt-4o';
     let provider: string;
     let modelName: string;
 
@@ -495,29 +518,43 @@ async function executeAgentNodeInternal(
         usage = response.response_metadata?.usage || {};
       }
     } else if (provider === 'google' && apiKeys?.google) {
-      // Google Gemini execution
+      // Google Gemini execution - properly handle conversation history like OpenAI
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(apiKeys.google);
       
       // Convert model name from 'google/gemini-2.5-pro' to 'gemini-2.5-pro'
       const geminiModelName = modelName.replace('google/', '');
-      const model = genAI.getGenerativeModel({ model: geminiModelName });
-      
-      // Convert messages to Gemini format
-      const lastMessage = messages[messages.length - 1];
-      const prompt = lastMessage.content as string;
       
       // Note: Gemini doesn't support MCP tools, so skip if MCP tools are configured
       if (hasMcpTools) {
         console.warn('⚠️ Gemini does not support MCP tools. MCP tools will be ignored for this request.');
       }
       
-      const result = await model.generateContent(prompt);
+      // Convert messages to Gemini format (contents array with role and parts)
+      // Gemini uses 'user' and 'model' roles (instead of 'assistant')
+      const contents = messages.map((msg: any) => {
+        const role = msg.role === 'assistant' ? 'model' : 'user';
+        return {
+          role: role,
+          parts: [{ text: msg.content }],
+        };
+      });
+      
+      const model = genAI.getGenerativeModel({ model: geminiModelName });
+      const result = await model.generateContent({ contents });
       const response = await result.response;
       responseText = response.text();
       
-      // Gemini doesn't provide detailed usage info in the same format
-      usage = {
+      // Extract usage information if available from Gemini
+      // Note: usageMetadata is a property, not a method, and may not always be available
+      const usageMetadata = response.usageMetadata || null;
+      usage = usageMetadata ? {
+        input_tokens: usageMetadata.promptTokenCount || 0,
+        output_tokens: usageMetadata.candidatesTokenCount || 0,
+        total_tokens: (usageMetadata.promptTokenCount || 0) + (usageMetadata.candidatesTokenCount || 0),
+        prompt_tokens: usageMetadata.promptTokenCount || 0,
+        completion_tokens: usageMetadata.candidatesTokenCount || 0,
+      } : {
         input_tokens: 0,
         output_tokens: 0,
         total_tokens: 0,
@@ -569,7 +606,7 @@ async function executeAgentNodeInternal(
     }
 
     if (errorMessage.includes('No API key available')) {
-      throw new Error('No API key configured. Please add an Anthropic, OpenAI, or Groq API key in your .env.local file.');
+      throw new Error('No API key configured. Please add an Anthropic, OpenAI, Google, or Groq API key in your .env.local file.');
     }
 
     throw new Error(`Agent execution failed: ${errorMessage}`);

@@ -42,6 +42,25 @@ export function substituteVariables(text: string, state: WorkflowState): string 
           if (githubResult && githubResult.data && githubResult.data.repository) {
             return githubResult.data.repository.full_name || githubResult.data.repository.name;
           }
+          
+          // If this is a failed list_repositories call, try to extract from the original input
+          if (githubResult && githubResult.error && githubResult.error.includes('404')) {
+            // Look for repository name in the error context or try to use the original input
+            console.log('🔍 GitHub list_repositories failed, trying to extract repo from context');
+            // Try to get the original repository from state
+            const originalRepo = state.variables?.input?.repository;
+            if (originalRepo && typeof originalRepo === 'string') {
+              // Extract owner/repo from full GitHub URL
+              const githubMatch = originalRepo.match(/https:\/\/github\.com\/([^\/]+)\/([^\/\s]+)/);
+              if (githubMatch) {
+                const [, owner, repo] = githubMatch;
+                return `${owner}/${repo}`;
+              }
+              return originalRepo;
+            }
+            // Fallback
+            return 'adversysai/adversys-ide';
+          }
         }
         
         return JSON.stringify(value);
@@ -100,6 +119,20 @@ function evaluateExpression(expression: string, state: WorkflowState): any {
     }
   }
 
+  // Repo helper variables: owner, repoName, repoSlug
+  const needsRepoVars = (
+    normalizedExpr === 'state.variables.owner' ||
+    normalizedExpr === 'state.variables.repoName' ||
+    normalizedExpr === 'state.variables.repoSlug'
+  );
+  if (needsRepoVars) {
+    const repoUrl = state.variables?.input?.repoUrl || state.variables?.repoUrl || state.variables?.input?.repositoryUrl;
+    const { owner, repoName, repoSlug } = deriveRepoVars(String(repoUrl || ''));
+    if (normalizedExpr.endsWith('.owner')) return owner || undefined;
+    if (normalizedExpr.endsWith('.repoName')) return repoName || undefined;
+    if (normalizedExpr.endsWith('.repoSlug')) return repoSlug || undefined;
+  }
+
   // Special handling for input.X pattern - try multiple resolution strategies
   if (current === undefined && normalizedExpr.startsWith('state.variables.input.')) {
     const inputPath = normalizedExpr.replace('state.variables.input.', '');
@@ -125,6 +158,19 @@ function evaluateExpression(expression: string, state: WorkflowState): any {
     }
     if (nestedCurrent !== undefined) {
       return nestedCurrent;
+    }
+
+    // Strategy 4: Aliases for common repo inputs
+    // Map input.repository or input.repo to owner/repo extracted from repoUrl
+    if (['repository', 'repo'].includes(inputPath)) {
+      const repoUrl = state.variables?.input?.repoUrl || state.variables?.repoUrl || state.variables?.input?.repositoryUrl;
+      const { repoSlug } = deriveRepoVars(String(repoUrl || ''));
+      if (repoSlug) return repoSlug;
+      // If a plain owner/repo was provided somewhere
+      const directRepo = state.variables?.input?.repo || state.variables?.repo || state.variables?.input?.repository;
+      if (typeof directRepo === 'string') {
+        return directRepo;
+      }
     }
   }
 
@@ -222,4 +268,16 @@ export function getAvailableVariables(state: WorkflowState): Array<{
   });
 
   return variables;
+}
+
+/**
+ * Derive repo helper variables from a GitHub URL
+ */
+export function deriveRepoVars(repoUrl: string): { owner?: string; repoName?: string; repoSlug?: string } {
+  if (!repoUrl || typeof repoUrl !== 'string') return {};
+  const match = repoUrl.match(/https:\/\/github\.com\/([^\/]+)\/([^\/#?\s]+)/);
+  if (!match) return {};
+  const owner = match[1];
+  const repoName = match[2];
+  return { owner, repoName, repoSlug: `${owner}/${repoName}` };
 }

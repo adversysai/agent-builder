@@ -283,6 +283,35 @@ async function analyzeWithLLM(
 
     const text = response.choices[0]?.message?.content || '{}';
     return JSON.parse(text);
+  } else if (provider === 'google' && apiKeys.google) {
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const genAI = new GoogleGenerativeAI(apiKeys.google);
+    
+    // Convert model name from 'google/gemini-2.5-pro' to 'gemini-2.5-pro'
+    const geminiModelName = modelName.replace('google/', '');
+    const model = genAI.getGenerativeModel({ model: geminiModelName });
+    
+    // Gemini supports JSON mode via generationConfig
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+    } as any);
+    
+    const geminiResponse = await result.response;
+    const text = geminiResponse.text();
+    
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      // Try to extract JSON if response is wrapped in text
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      throw new Error('No JSON found in Gemini response');
+    }
   }
 
   throw new Error(`Unsupported provider: ${provider}`);

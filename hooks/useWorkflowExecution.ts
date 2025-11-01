@@ -414,6 +414,195 @@ export function useWorkflowExecution() {
     pendingResumeRef.current = null;
   }, []);
 
+  const rerunNode = useCallback(async (nodeId: string) => {
+    if (!currentWorkflow) {
+      console.error('No workflow to execute');
+      return;
+    }
+
+    setIsRunning(true);
+    setPendingAuth(null);
+    
+    // Don't clear nodeResults - we'll preserve upstream nodes
+    // Only clear results for the node being re-run and its downstream nodes
+    const nodesToClear = getDownstreamNodes(currentWorkflow, nodeId);
+    setNodeResults(prev => {
+      const updated = { ...prev };
+      // Delete the target node and all downstream nodes (don't set to undefined)
+      delete updated[nodeId];
+      nodesToClear.forEach(id => {
+        delete updated[id];
+      });
+      return updated;
+    });
+
+    setCurrentNodeId(null);
+
+    // Create abort controller
+    abortControllerRef.current = new AbortController();
+
+    try {
+      // Fetch API keys from server
+      const configResponse = await fetch('/api/config');
+      const apiConfig = await configResponse.json();
+
+      // Preserve upstream node results - only send results for nodes that are NOT being re-run
+      const nodesToClear = getDownstreamNodes(currentWorkflow, nodeId);
+      const preservedNodeResults: Record<string, NodeExecutionResult> = {};
+      
+      Object.entries(nodeResults).forEach(([id, result]) => {
+        // Preserve results for nodes that are NOT being re-run (upstream nodes)
+        if (id !== nodeId && !nodesToClear.includes(id) && result) {
+          preservedNodeResults[id] = result;
+        }
+      });
+
+      // Execute workflow via rerun-node API
+      const response = await fetch(`/api/workflows/${currentWorkflow.id}/rerun-node`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeId,
+          preserveState: true,
+          preservedNodeResults, // Send preserved upstream node results
+        }),
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Re-run failed' }));
+        throw new Error(errorData.error || 'Re-run failed');
+      }
+
+      // Handle SSE stream (same as full workflow execution)
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      let buffer = '';
+      let executionId = '';
+      let currentEvent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() === '') {
+            currentEvent = '';
+            continue;
+          }
+
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+            continue;
+          }
+
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (currentEvent === 'error' && data.error) {
+                toast.error('Re-run Error', {
+                  description: data.error,
+                  duration: 10000,
+                });
+                setIsRunning(false);
+                setCurrentNodeId(null);
+                break;
+              }
+
+              if (currentEvent === 'node_started' && data.nodeId) {
+                setCurrentNodeId(data.nodeId);
+              }
+
+              if (data.nodeResults) {
+                setNodeResults(prev => ({ ...prev, ...data.nodeResults }));
+              }
+
+              if (data.currentNodeId) {
+                setCurrentNodeId(data.currentNodeId);
+              }
+
+              if (data.executionId) {
+                executionId = data.executionId;
+              }
+
+              if (data.pendingAuth) {
+                setPendingAuth(data.pendingAuth);
+                const waitingExecution: WorkflowExecution = {
+                  id: executionId || data.executionId || `exec_${Date.now()}`,
+                  workflowId: currentWorkflow.id,
+                  status: 'waiting-auth',
+                  nodeResults: data.nodeResults || {},
+                  startedAt: data.timestamp || new Date().toISOString(),
+                };
+                setExecution(waitingExecution);
+                break;
+              }
+
+              if (currentEvent === 'workflow_completed' || data.status === 'completed') {
+                const execution: WorkflowExecution = {
+                  id: executionId || data.executionId || `exec_${Date.now()}`,
+                  workflowId: currentWorkflow.id,
+                  status: data.status || 'completed',
+                  nodeResults: data.results || data.nodeResults || {},
+                  startedAt: data.timestamp || new Date().toISOString(),
+                  completedAt: data.timestamp || new Date().toISOString(),
+                };
+                setExecution(execution);
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE data:', e, 'Line:', line);
+            }
+          }
+        }
+      }
+
+      console.log('✅ Node re-run complete');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('⏹️ Re-run stopped by user');
+        return;
+      }
+
+      console.error('❌ Node re-run failed:', error);
+      toast.error('Re-run Failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setIsRunning(false);
+      setCurrentNodeId(null);
+    }
+  }, [currentWorkflow]);
+
+  // Helper function to get all downstream nodes (nodes that depend on the given node)
+  function getDownstreamNodes(workflow: Workflow, nodeId: string): string[] {
+    const downstream: string[] = [];
+    const visited = new Set<string>();
+
+    function traverse(currentNodeId: string) {
+      if (visited.has(currentNodeId)) return;
+      visited.add(currentNodeId);
+
+      const outgoingEdges = workflow.edges.filter(e => e.source === currentNodeId);
+      for (const edge of outgoingEdges) {
+        downstream.push(edge.target);
+        traverse(edge.target);
+      }
+    }
+
+    traverse(nodeId);
+    return downstream;
+  }
+
   return {
     execution,
     isRunning,
@@ -424,5 +613,6 @@ export function useWorkflowExecution() {
     stopWorkflow,
     resumeWorkflow,
     clearExecution,
+    rerunNode,
   };
 }

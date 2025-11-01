@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import type { Node } from "@xyflow/react";
+import { Sparkles } from "lucide-react";
 
 interface LogicNodePanelProps {
   node: Node | null;
@@ -10,9 +11,24 @@ interface LogicNodePanelProps {
   onClose: () => void;
   onDelete: (nodeId: string) => void;
   onUpdate: (nodeId: string, data: any) => void;
+  onFixWithAI?: (nodeId: string) => void;
+  workflow?: {
+    nodes: any[];
+    edges: any[];
+    name?: string;
+    description?: string;
+  };
+  error?: {
+    message: string;
+    type?: string;
+  };
+  executionContext?: {
+    nodeResults?: Record<string, any>;
+    variables?: Record<string, any>;
+  };
 }
 
-export default function LogicNodePanel({ node, nodes, onClose, onDelete, onUpdate }: LogicNodePanelProps) {
+export default function LogicNodePanel({ node, nodes, onClose, onDelete, onUpdate, onFixWithAI, workflow, error, executionContext }: LogicNodePanelProps) {
   const nodeData = node?.data as any;
   const nodeType = nodeData?.nodeType?.toLowerCase() || '';
   const [name, setName] = useState(nodeData?.name || nodeData?.nodeName || "Logic");
@@ -137,6 +153,15 @@ export default function LogicNodePanel({ node, nodes, onClose, onDelete, onUpdat
                 placeholder="Enter node name..."
               />
               <div className="flex items-center gap-8">
+                {onFixWithAI && (
+                  <button
+                    onClick={() => onFixWithAI(node?.id || '')}
+                    className="w-32 h-32 rounded-6 hover:bg-purple-100 transition-colors flex items-center justify-center group"
+                    title="Fix with AI"
+                  >
+                    <Sparkles className="w-18 h-18 text-purple-600 group-hover:text-purple-700" />
+                  </button>
+                )}
                 <button
                   onClick={() => onDelete(node?.id || '')}
                   className="w-32 h-32 rounded-6 hover:bg-black-alpha-4 transition-colors flex items-center justify-center group"

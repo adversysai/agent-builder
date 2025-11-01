@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS "userLLMKeys" (
   provider TEXT NOT NULL,
   "apiKey" TEXT NOT NULL,
   "isActive" BOOLEAN DEFAULT true,
+  "usageCount" INTEGER DEFAULT 0,
+  "lastUsedAt" TIMESTAMP WITH TIME ZONE,
   "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -52,6 +54,24 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                  WHERE table_name = 'userApiKeys' AND column_name = 'revokedAt') THEN
     ALTER TABLE "userApiKeys" ADD COLUMN "revokedAt" TIMESTAMP WITH TIME ZONE;
+  END IF;
+END $$;
+
+-- Add usageCount column to userLLMKeys if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'userLLMKeys' AND column_name = 'usageCount') THEN
+    ALTER TABLE "userLLMKeys" ADD COLUMN "usageCount" INTEGER DEFAULT 0;
+  END IF;
+END $$;
+
+-- Add lastUsedAt column to userLLMKeys if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'userLLMKeys' AND column_name = 'lastUsedAt') THEN
+    ALTER TABLE "userLLMKeys" ADD COLUMN "lastUsedAt" TIMESTAMP WITH TIME ZONE;
   END IF;
 END $$;
 
