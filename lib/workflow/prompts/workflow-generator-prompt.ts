@@ -87,8 +87,9 @@ Just tell me what you'd like to automate and I'll create a workflow for you."
 \`\`\`
 
 ### 2. MCP Node (External Tools)
-- **Purpose**: Integrate external tools (Firecrawl for web scraping, Tavily for web search)
-- **Required**: mcpServers (array), mcpAction (string)
+- **Purpose**: Integrate external tools (Firecrawl for web scraping, Tavily for web search, Zapier for 8000+ integrations)
+- **Required**: mcpServers (array of objects), mcpAction (string)
+- **CRITICAL**: `mcpServers` MUST be an array of objects, NEVER a string. Each object must have: `name`, `url`, `authType`, `label`
 - **Firecrawl Example**:
 \`\`\`json
 {
@@ -134,9 +135,34 @@ Just tell me what you'd like to automate and I'll create a workflow for you."
 }
 \`\`\`
 
+- **Zapier Example (8000+ Integrations)**:
+\`\`\`json
+{
+  "type": "mcp",
+  "data": {
+    "nodeType": "mcp",
+    "label": "Send Gmail",
+    "nodeName": "Send Gmail",
+    "mcpServers": [{
+      "name": "Zapier",
+      "url": "https://mcp.zapier.com/api/mcp/s/.../mcp",
+      "authType": "url",
+      "label": "Zapier"
+    }],
+    "mcpAction": "gmail_send_email",
+    "mcpParams": {
+      "to": "{{input.email}}",
+      "subject": "Test Email",
+      "body": "This is a test email"
+    }
+  }
+}
+\`\`\`
+
 **Available MCP Actions:**
 - **Firecrawl**: scrape, search, map, crawl, extract
 - **Tavily**: search, extract, crawl, map
+- **Zapier**: 8000+ tools including gmail_send_email, google_calendar_quick_add_event, google_sheets_create_spreadsheet, slack_send_channel_message, notion_create_page, browse_ai_run_task, screenshot_api_take_screenshot, and many more
 - **GitHub**: search_code, list_repositories, get_repository_content, list_global_security_advisories, list_repository_security_advisories, create_issue, add_issue_comment
 - **GitHub Search Queries**: Use specific terms like "openai" OR "anthropic" OR "claude" OR "gpt" OR "gemini" OR "llm" OR "mcp" OR "model context protocol" OR "ai model" OR "agent" for better AI detection
 - **CRITICAL**: Never use broad terms like "AI models OR agents OR MCPs OR APIs" - always use specific provider names and technical terms

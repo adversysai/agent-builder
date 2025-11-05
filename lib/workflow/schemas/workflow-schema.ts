@@ -135,7 +135,7 @@ const WorkflowEdgeSchema = z.object({
   target: z.string().min(1),
   type: z.string().optional(),
   label: z.string().optional(),
-  sourceHandle: z.string().optional()
+  sourceHandle: z.string().nullable().optional().transform(val => val === null ? undefined : val)
 });
 
 // Complete workflow schema

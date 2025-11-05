@@ -91,6 +91,21 @@ export async function executeExtractNode(
     if (!schema.properties) {
       schema.properties = {};
     }
+    
+    // OpenAI requires that if properties exist, all keys must be in the 'required' array
+    if (schema.type === 'object' && schema.properties && Object.keys(schema.properties).length > 0) {
+      // Add all property keys to required array if not already present
+      if (!schema.required || !Array.isArray(schema.required)) {
+        schema.required = [];
+      }
+      const propertyKeys = Object.keys(schema.properties);
+      const requiredKeys = new Set(schema.required);
+      propertyKeys.forEach(key => {
+        if (!requiredKeys.has(key)) {
+          schema.required.push(key);
+        }
+      });
+    }
 
     // If MCP tools are configured, use Responses API
     if (data.mcpTools && data.mcpTools.length > 0) {

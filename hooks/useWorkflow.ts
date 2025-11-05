@@ -12,6 +12,88 @@ import {
 } from '@/lib/workflow/storage';
 import { cleanupInvalidEdges } from '@/lib/workflow/edge-cleanup';
 
+/**
+ * Safely serializes an object to JSON by removing circular references,
+ * functions, React components, and other non-serializable values
+ */
+function safeStringify(obj: any, space?: number): string {
+  const seen = new WeakSet();
+  
+  function cleanValue(value: any): any {
+    // Handle null and undefined
+    if (value === null || value === undefined) {
+      return value;
+    }
+    
+    // Handle primitives
+    if (typeof value !== 'object') {
+      return value;
+    }
+    
+    // Handle circular references
+    if (seen.has(value)) {
+      return '[Circular]';
+    }
+    
+    // Handle functions
+    if (typeof value === 'function') {
+      return '[Function]';
+    }
+    
+    // Handle React components (objects with $$typeof property)
+    if (value.$$typeof) {
+      return '[React Component]';
+    }
+    
+    // Handle Provider-like objects (common React context pattern)
+    if (value.Provider || value.Consumer) {
+      return '[React Context]';
+    }
+    
+    // Handle Date objects
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    
+    // Handle arrays
+    if (Array.isArray(value)) {
+      seen.add(value);
+      return value.map(cleanValue);
+    }
+    
+    // Handle objects
+    seen.add(value);
+    const cleaned: any = {};
+    
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        try {
+          cleaned[key] = cleanValue(value[key]);
+        } catch (error) {
+          // Skip properties that can't be serialized
+          cleaned[key] = '[Non-serializable]';
+        }
+      }
+    }
+    
+    return cleaned;
+  }
+  
+  try {
+    const cleaned = cleanValue(obj);
+    return JSON.stringify(cleaned, null, space);
+  } catch (error) {
+    console.error('Error in safeStringify:', error);
+    // Fallback to regular stringify with error handling
+    try {
+      return JSON.stringify(obj, null, space);
+    } catch (fallbackError) {
+      console.error('Fallback stringify also failed:', fallbackError);
+      return '{}';
+    }
+  }
+}
+
 export function useWorkflow(workflowId?: string) {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -157,7 +239,7 @@ export function useWorkflow(workflowId?: string) {
         const response = await fetch('/api/workflows', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newWorkflow),
+          body: safeStringify(newWorkflow),
         });
         const data = await response.json();
         console.log('💾 New workflow saved to database:', data.success ? 'SUCCESS' : 'FAILED');
@@ -191,7 +273,7 @@ export function useWorkflow(workflowId?: string) {
         const response = await fetch('/api/workflows', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updated),
+          body: safeStringify(updated),
         });
         const data = await response.json();
         console.log('💾 [AUTO-SAVE] Workflow synced to NeonDB:', data.success ? '✅ SUCCESS' : '❌ FAILED');
@@ -276,7 +358,7 @@ export function useWorkflow(workflowId?: string) {
       const response = await fetch('/api/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
+        body: safeStringify(updated),
       });
       const data = await response.json();
       console.log('💾 [IMMEDIATE SAVE] Workflow saved to NeonDB:', data.success ? '✅ SUCCESS' : '❌ FAILED');

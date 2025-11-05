@@ -30,6 +30,7 @@ export default function RootLayout({
         </head>
         <body
           className={`${GeistMono.variable} font-sans text-accent-black bg-background-base overflow-x-clip`}
+          suppressHydrationWarning
         >
           <BigIntProvider>
             <main className="overflow-x-clip">{children}</main>

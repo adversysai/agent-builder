@@ -388,15 +388,151 @@ async function executeAgentNodeInternal(
                 }
 
                 // Parse arguments
-                const args = JSON.parse(call.function.arguments);
+                let args = JSON.parse(call.function.arguments);
+                
+                // Zapier MCP tools require 'instructions' parameter
+                // If not provided, construct it from available parameters
+                const isZapier = mcpServer.url?.includes('zapier.com') || mcpServer.name?.toLowerCase().includes('zapier');
+                if (isZapier && !args.instructions && typeof args === 'object' && Object.keys(args).length > 0) {
+                  console.log('⚠️ Zapier tool missing "instructions" parameter, constructing from available params');
+                  
+                  // Create natural language instructions from parameters
+                  let instructionsText = '';
+                  
+                  // Handle email/send tools (must be Gmail-specific)
+                  if (call.function.name.includes('gmail') || (call.function.name.includes('email') && !call.function.name.includes('slack') && !call.function.name.includes('message'))) {
+                    const recipient = args.to || args.email || '';
+                    const subject = args.subject || '';
+                    const body = args.body || args.message || args.content || '';
+                    
+                    const parts: string[] = [];
+                    if (recipient) parts.push(`to ${recipient}`);
+                    if (subject) parts.push(`with subject "${subject}"`);
+                    if (body) parts.push(`with body "${typeof body === 'string' ? body : JSON.stringify(body)}"`);
+                    
+                    instructionsText = parts.length > 0 
+                      ? `Send an email ${parts.join(' ')}.`
+                      : 'Send an email.';
+                  }
+                  // Handle sheets/spreadsheet tools
+                  else if (call.function.name.includes('sheets') || call.function.name.includes('spreadsheet')) {
+                    const spreadsheetId = args.spreadsheetId || args.spreadsheet_id || '';
+                    const range = args.range || args.worksheet || 'Sheet1!A1';
+                    const values = args.values || args.cells || args.row || [];
+                    
+                    const parts: string[] = [];
+                    if (spreadsheetId) parts.push(`to spreadsheet ${spreadsheetId}`);
+                    if (range) parts.push(`at range ${range}`);
+                    if (values && values.length > 0) parts.push(`with values ${JSON.stringify(values)}`);
+                    
+                    instructionsText = parts.length > 0 
+                      ? `Create a spreadsheet row ${parts.join(' ')}.`
+                      : 'Create a spreadsheet row.';
+                  }
+                  // Handle Slack tools
+                  else if (call.function.name.includes('slack')) {
+                    const channel = args.channel || args.channel_id || '';
+                    const text = args.text || args.message || args.content || '';
+                    
+                    const parts: string[] = [];
+                    if (channel) parts.push(`to channel ${channel}`);
+                    if (text) parts.push(`with text "${text}"`);
+                    
+                    instructionsText = parts.length > 0 
+                      ? `Send a Slack message ${parts.join(' ')}.`
+                      : 'Send a Slack message.';
+                  }
+                  // Handle Notion tools
+                  else if (call.function.name.includes('notion')) {
+                    const title = args.title || args.name || '';
+                    const content = args.content || args.body || '';
+                    const parentPage = args.parent_page || args.parentPage || '';
+                    
+                    const parts: string[] = [];
+                    if (title) parts.push(`with title "${title}"`);
+                    if (content) parts.push(`and content "${content}"`);
+                    if (parentPage) parts.push(`under parent page ${parentPage}`);
+                    
+                    instructionsText = parts.length > 0 
+                      ? `Create a Notion page ${parts.join(' ')}.`
+                      : 'Create a Notion page.';
+                  }
+                  // Handle Smartsheet tools
+                  else if (call.function.name.includes('smartsheet')) {
+                    const sheetId = args.sheet_id || args.sheetId || args.SHEET_ID || '';
+                    const rowId = args.row_id || args.rowId || args.ROW_ID || '';
+                    
+                    const parts: string[] = [];
+                    if (sheetId) parts.push(`in sheet ${sheetId}`);
+                    if (rowId) parts.push(`for row ${rowId}`);
+                    
+                    instructionsText = parts.length > 0 
+                      ? `Execute Smartsheet action ${parts.join(' ')}.`
+                      : 'Execute Smartsheet action.';
+                  }
+                  // Handle calendar event tools
+                  else if (call.function.name.includes('calendar') || (call.function.name.includes('event') && !call.function.name.includes('notion'))) {
+                    const title = args.summary || args.title || args.name || '';
+                    const start = args.start_time || args.startTime || args.start || '';
+                    const end = args.end_time || args.endTime || args.end || '';
+                    
+                    const parts: string[] = [];
+                    if (title) parts.push(`"${title}"`);
+                    if (start) parts.push(`starting at ${start}`);
+                    if (end) parts.push(`ending at ${end}`);
+                    
+                    instructionsText = parts.length > 0 
+                      ? `Create a calendar event ${parts.join(' ')}.`
+                      : 'Create a calendar event.';
+                  }
+                  // Generic tools
+                  else {
+                    const instructionsParts: string[] = [];
+                    
+                    if (args.to || args.email) {
+                      instructionsParts.push(`to ${args.to || args.email}`);
+                    }
+                    if (args.subject) {
+                      instructionsParts.push(`with subject "${args.subject}"`);
+                    }
+                    if (args.body || (args.message && !call.function.name.includes('slack')) || args.content) {
+                      const content = args.body || args.message || args.content;
+                      instructionsParts.push(`with body "${typeof content === 'string' ? content.substring(0, 100) : JSON.stringify(content)}"`);
+                    }
+                    if (args.summary || args.title) {
+                      instructionsParts.push(`with title "${args.summary || args.title}"`);
+                    }
+                    
+                    // Determine action verb
+                    let actionVerb = 'Execute';
+                    if (call.function.name.includes('create') || call.function.name.includes('add')) {
+                      actionVerb = 'Create';
+                    } else if (call.function.name.includes('send')) {
+                      actionVerb = 'Send';
+                    }
+                    
+                    instructionsText = instructionsParts.length > 0 
+                      ? `${actionVerb} ${instructionsParts.join(' ')}.`
+                      : `${actionVerb} with parameters: ${Object.entries(args)
+                          .map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
+                          .join(', ')}.`;
+                  }
+                  
+                  args = { instructions: instructionsText, ...args };
+                  console.log('✅ Constructed instructions:', instructionsText.substring(0, 200));
+                }
+
+                // Build headers
+                const headers: HeadersInit = {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json, text/event-stream',
+                  ...(mcpServer.authToken && { 'Authorization': `Bearer ${mcpServer.authToken}` })
+                };
 
                 // Call MCP tool via HTTP
                 const mcpResponse = await fetch(mcpServer.url, {
                   method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    ...(mcpServer.authToken && { 'Authorization': `Bearer ${mcpServer.authToken}` })
-                  },
+                  headers,
                   body: JSON.stringify({
                     jsonrpc: '2.0',
                     id: Date.now(),
@@ -408,11 +544,93 @@ async function executeAgentNodeInternal(
                   })
                 });
 
-                const result = await mcpResponse.json();
+                // Read response as text first (can only read once)
+                const responseText = await mcpResponse.text();
+                
+                if (!mcpResponse.ok) {
+                  throw new Error(`MCP server returned ${mcpResponse.status}: ${responseText.substring(0, 500)}`);
+                }
+                
+                // Check if response is SSE (Server-Sent Events) format
+                const contentType = mcpResponse.headers.get('content-type') || '';
+                const isSSE = contentType.includes('text/event-stream') || 
+                              contentType.includes('text/plain') ||
+                              responseText.includes('event:') || 
+                              responseText.includes('data:');
+                
+                let result: any;
+                
+                if (isSSE) {
+                  // Handle SSE format response
+                  console.log('🔍 MCP server returned SSE format, parsing...');
+                  
+                  // Parse SSE format - look for "data: {...}" patterns
+                  const dataMatches = Array.from(responseText.matchAll(/(?:^|\n)data:\s*(\{[\s\S]*?\})\s*(?:\n|$)/gm));
+                  
+                  if (dataMatches.length > 0) {
+                    // Use the last data chunk (most complete result)
+                    const lastDataChunk = dataMatches[dataMatches.length - 1][1];
+                    try {
+                      result = JSON.parse(lastDataChunk);
+                      console.log('✅ Parsed SSE data chunk successfully');
+                    } catch (e) {
+                      // Try to extract JSON more carefully
+                      const jsonMatch = lastDataChunk.match(/\{[\s\S]*\}/);
+                      if (jsonMatch) {
+                        result = JSON.parse(jsonMatch[0]);
+                      } else {
+                        throw new Error(`MCP server returned invalid SSE format. Response preview: ${responseText.substring(0, 300)}`);
+                      }
+                    }
+                  } else {
+                    // Try alternative format: look for any JSON object in the response
+                    const jsonMatch = responseText.match(/\{[\s\S]*"jsonrpc"[\s\S]*\}/) || 
+                                     responseText.match(/\{[\s\S]*"result"[\s\S]*\}/) || 
+                                     responseText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                      result = JSON.parse(jsonMatch[0]);
+                    } else {
+                      throw new Error(`MCP server returned invalid SSE format. Response preview: ${responseText.substring(0, 300)}`);
+                    }
+                  }
+                } else {
+                  // Regular JSON response
+                  try {
+                    result = JSON.parse(responseText);
+                  } catch (e) {
+                    throw new Error(`MCP server returned invalid JSON format. Response preview: ${responseText.substring(0, 300)}`);
+                  }
+                }
+                
+                // Check for errors in JSON-RPC response
+                if (result.error) {
+                  const errorMessage = result.error.message || `MCP error ${result.error.code || 'unknown'}`;
+                  throw new Error(errorMessage);
+                }
+                
+                // Zapier MCP returns results in nested structure: result.content[0].text (JSON string)
+                let resultData = result.result || result.data || result;
+                
+                // If result has content array with text, parse it
+                if (resultData && typeof resultData === 'object' && Array.isArray(resultData.content)) {
+                  const contentItem = resultData.content.find((item: any) => item.type === 'text' && item.text);
+                  if (contentItem && contentItem.text) {
+                    try {
+                      // The text is a JSON string, parse it
+                      const parsedContent = JSON.parse(contentItem.text);
+                      // Extract the actual result from the parsed content
+                      resultData = parsedContent.results || parsedContent.execution || parsedContent || resultData;
+                    } catch (e) {
+                      // If parsing fails, use the original resultData
+                      console.warn('⚠️ Failed to parse MCP content text, using original result:', e);
+                    }
+                  }
+                }
+                
                 return {
                   tool_call_id: call.id,
                   role: "tool" as const,
-                  content: JSON.stringify(result.result || result)
+                  content: JSON.stringify(resultData)
                 };
               } catch (error) {
                 return {

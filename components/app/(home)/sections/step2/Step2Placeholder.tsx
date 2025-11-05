@@ -252,7 +252,7 @@ export default function Step2Placeholder({ onReset, onCreateWorkflow, onLoadWork
           workflows.length > 0 ? (
             workflows.map((workflow, index) => (
               <motion.div
-                key={workflow.id || `workflow-${index}`}
+                key={`workflow-${workflow.id || index}-${index}`}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{

@@ -13,6 +13,7 @@ export interface APIKeys {
   tavily?: string;
   github?: string;
   google?: string;
+  zapier?: string;
 }
 
 /**
@@ -29,6 +30,7 @@ export function getServerAPIKeys(): APIKeys {
   const tavily = process.env.TAVILY_API_KEY;
   const github = process.env.GITHUB_TOKEN;
   const google = process.env.GOOGLE_API_KEY;
+  const zapier = process.env.ZAPIER_MCP_SERVER_URL || process.env.ZAPIER_MCP_OAUTH_URL;
 
   return {
     anthropic,
@@ -40,6 +42,7 @@ export function getServerAPIKeys(): APIKeys {
     tavily,
     github,
     google,
+    zapier,
   };
 }
 

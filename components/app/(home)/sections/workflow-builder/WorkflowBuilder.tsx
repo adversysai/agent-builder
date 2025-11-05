@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, DragEvent, useState, useEffect } from "react";
+import { useCallback, useRef, DragEvent, useState, useEffect, useMemo } from "react";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import {
   ReactFlow,
@@ -365,6 +365,8 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
   const [showMCPSelector, setShowMCPSelector] = useState(false);
   const [targetAgentForMCP, setTargetAgentForMCP] = useState<Node | null>(null);
   const [duplicateWarnings, setDuplicateWarnings] = useState<any[]>([]);
+  const duplicateWarningsToastShownRef = useRef(false);
+  const prevWarningsKeyRef = useRef<string>('');
   const [showWorkflowMenu, setShowWorkflowMenu] = useState(false);
   const workflowMenuRef = useRef<HTMLDivElement>(null);
   const [renameTrigger, setRenameTrigger] = useState(0);
@@ -735,20 +737,36 @@ function WorkflowBuilderInner({ onBack, initialWorkflowId, initialTemplateId }: 
   };
 
   // Detect duplicate credentials
+  // Use useMemo to create stable node/edge ID arrays to avoid infinite loops
+  const nodeIds = useMemo(() => workflow?.nodes?.map(n => n.id).join(',') || '', [workflow?.nodes]);
+  const edgeIds = useMemo(() => workflow?.edges?.map(e => e.id).join(',') || '', [workflow?.edges]);
+  
   useEffect(() => {
     if (workflow) {
       const warnings = detectDuplicateCredentials(workflow);
-      setDuplicateWarnings(warnings);
+      const warningsKey = JSON.stringify(warnings);
+      
+      // Only update if warnings actually changed (compare with previous key stored in ref)
+      if (warningsKey !== prevWarningsKeyRef.current) {
+        prevWarningsKeyRef.current = warningsKey;
+        setDuplicateWarnings(warnings);
 
-      // Show toast for new warnings
-      if (warnings.length > 0 && duplicateWarnings.length === 0) {
-        toast.warning(`Found ${warnings.length} duplicate credential${warnings.length > 1 ? 's' : ''}`, {
-          description: 'Click the warning icon to view details',
-          duration: 5000,
-        });
+        // Show toast for new warnings only (not on every re-render)
+        if (warnings.length > 0 && !duplicateWarningsToastShownRef.current) {
+          duplicateWarningsToastShownRef.current = true;
+          toast.warning(`Found ${warnings.length} duplicate credential${warnings.length > 1 ? 's' : ''}`, {
+            description: 'Click the warning icon to view details',
+            duration: 5000,
+          });
+        }
+        
+        // Reset toast flag when warnings are cleared
+        if (warnings.length === 0 && duplicateWarningsToastShownRef.current) {
+          duplicateWarningsToastShownRef.current = false;
+        }
       }
     }
-  }, [workflow?.nodes, workflow?.edges]);
+  }, [workflow?.id, nodeIds, edgeIds]);
 
   // Sync React Flow state with workflow state (debounced to avoid loops)
   // Skip auto-save for nodes - only save when user explicitly modifies the workflow

@@ -425,6 +425,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Clean up edges: remove null sourceHandle values
+    if (generatedWorkflow.edges && Array.isArray(generatedWorkflow.edges)) {
+      generatedWorkflow.edges = generatedWorkflow.edges.map((edge: any) => {
+        const cleanedEdge = { ...edge };
+        // Remove null sourceHandle values (set to undefined instead)
+        if (cleanedEdge.sourceHandle === null) {
+          delete cleanedEdge.sourceHandle;
+        }
+        // Remove null targetHandle values if present
+        if (cleanedEdge.targetHandle === null) {
+          delete cleanedEdge.targetHandle;
+        }
+        return cleanedEdge;
+      });
+    }
+
     // Validate the generated workflow using the schema
     const { validateGeneratedWorkflow } = await import('@/lib/workflow/schemas/workflow-schema');
     const validationResult = validateGeneratedWorkflow(generatedWorkflow);
@@ -462,16 +478,82 @@ export async function POST(request: NextRequest) {
           
           // Fix MCP nodes missing required fields
           if (nodeType === 'mcp') {
-            if (!node.data.mcpServers || node.data.mcpServers.length === 0) {
-              node.data.mcpServers = [{
-                id: 'tavily-default',
-                name: 'Tavily',
-                url: 'https://mcp.tavily.com/{TAVILY_API_KEY}/mcp',
-                authType: 'url',
-                label: 'Tavily'
-              }] as any;
-              console.log(`Fixed missing mcpServers for MCP node ${node.id}`);
+            // Fix mcpServers if it's a string instead of an array of objects
+            if (typeof node.data.mcpServers === 'string') {
+              // Try to find the server in the current workflow to preserve its structure
+              const serverName = node.data.mcpServers;
+              let serverConfig = null;
+              
+              // Look for the server in the current workflow's nodes
+              if (currentWorkflow && currentWorkflow.nodes) {
+                for (const existingNode of currentWorkflow.nodes) {
+                  if (existingNode.data?.mcpServers && Array.isArray(existingNode.data.mcpServers)) {
+                    const server = existingNode.data.mcpServers.find((s: any) => 
+                      (s.name || '').toLowerCase() === serverName.toLowerCase() ||
+                      (s.label || '').toLowerCase() === serverName.toLowerCase()
+                    );
+                    if (server) {
+                      serverConfig = server;
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              // If we found a matching server, use its config
+              if (serverConfig) {
+                node.data.mcpServers = [serverConfig];
+                console.log(`Fixed mcpServers string to array for MCP node ${node.id} using existing server config`);
+              } else {
+                // Fallback: create a basic server config
+                node.data.mcpServers = [{
+                  name: serverName,
+                  url: '',
+                  authType: 'url',
+                  label: serverName
+                }];
+                console.log(`Fixed mcpServers string to array for MCP node ${node.id} with fallback config`);
+              }
+            } else if (!node.data.mcpServers || node.data.mcpServers.length === 0) {
+              // If mcpServers is missing or empty, try to preserve from current workflow
+              if (currentWorkflow && currentWorkflow.nodes) {
+                for (const existingNode of currentWorkflow.nodes) {
+                  if (existingNode.id === node.id && existingNode.data?.mcpServers && Array.isArray(existingNode.data.mcpServers)) {
+                    node.data.mcpServers = existingNode.data.mcpServers;
+                    console.log(`Preserved mcpServers from existing node ${node.id}`);
+                    break;
+                  }
+                }
+              }
+              
+              // If still missing, use default
+              if (!node.data.mcpServers || node.data.mcpServers.length === 0) {
+                node.data.mcpServers = [{
+                  id: 'tavily-default',
+                  name: 'Tavily',
+                  url: 'https://mcp.tavily.com/{TAVILY_API_KEY}/mcp',
+                  authType: 'url',
+                  label: 'Tavily'
+                }] as any;
+                console.log(`Fixed missing mcpServers for MCP node ${node.id}`);
+              }
             }
+            
+            // Fix mcpServers array elements if they're strings
+            if (Array.isArray(node.data.mcpServers)) {
+              node.data.mcpServers = node.data.mcpServers.map((server: any) => {
+                if (typeof server === 'string') {
+                  return {
+                    name: server,
+                    url: '',
+                    authType: 'url',
+                    label: server
+                  };
+                }
+                return server;
+              });
+            }
+            
             if (!node.data.mcpAction) {
               node.data.mcpAction = 'search';
               console.log(`Fixed missing mcpAction for MCP node ${node.id}`);
@@ -548,7 +630,18 @@ ${currentWorkflow.nodes.map((node: any, index: number) => {
   const nodeData = node.data || {};
   const nodeName = nodeData.nodeName || nodeData.label || node.id;
   const nodeType = node.type || 'unknown';
-  return `${index + 1}. **${nodeName}** (${nodeType}) - Position: (${node.position?.x || 0}, ${node.position?.y || 0})`;
+  let nodeInfo = `${index + 1}. **${nodeName}** (${nodeType}) - Position: (${node.position?.x || 0}, ${node.position?.y || 0})`;
+  
+  // Add detailed structure for MCP nodes to help with modifications
+  if (nodeType === 'mcp' && nodeData.mcpServers) {
+    nodeInfo += `\n   - mcpServers: ${JSON.stringify(nodeData.mcpServers)}`;
+    nodeInfo += `\n   - mcpAction: ${nodeData.mcpAction || 'N/A'}`;
+    if (nodeData.mcpParams) {
+      nodeInfo += `\n   - mcpParams: ${JSON.stringify(nodeData.mcpParams)}`;
+    }
+  }
+  
+  return nodeInfo;
 }).join('\n')}
 
 **Current Connections (${currentWorkflow.edges.length} total):**
@@ -574,6 +667,9 @@ Based on the user's request, you can:
    - Preserve the overall structure where possible
    - Make targeted changes to specific nodes or connections
    - Ensure the modified workflow remains functional
+   - **CRITICAL**: When modifying nodes, preserve ALL existing node data structures exactly as they are, only changing the specific fields requested
+   - **CRITICAL**: For MCP nodes, mcpServers MUST be an array of objects with structure containing name, url, authType, and label fields, NEVER a string
+   - **CRITICAL**: When modifying a node, copy ALL fields from the existing node and only modify the requested fields
 
 4. **ENHANCE EXISTING WORKFLOW**: If the user wants to improve the current workflow:
    - Add missing connections or logic
@@ -600,6 +696,14 @@ When modifying an existing workflow, return the COMPLETE workflow including:
 - Updated workflow metadata if needed
 
 **IMPORTANT**: Always return the complete workflow structure, not just the additions.
+
+**CRITICAL FOR NODE MODIFICATIONS**:
+- When modifying a node, you MUST preserve ALL existing fields from the original node
+- Only change the specific fields requested by the user
+- For MCP nodes, mcpServers is ALWAYS an array of objects with name, url, authType, and label fields
+- NEVER set mcpServers as a string like "Zapier" - it must be an array of objects with the proper structure
+- When modifying node parameters, preserve the entire node structure including all fields like mcpParams, mcpAction, instructions, etc.
+- Example: If modifying a Gmail MCP node to change the recipient, preserve the entire mcpServers array structure and only change mcpParams.to
 
 ---
 
